@@ -9,6 +9,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import yaml
 
 from snakemake.exceptions import WorkflowError
 
@@ -45,6 +46,19 @@ def baseline_config(model):
 
 def resource(model, key):
     return config["resources"][model][key]
+
+
+def dpctw_gpu_resource():
+    with Path(baseline_config("dpctw")).open() as stream:
+        model_config = yaml.safe_load(stream) or {}
+    device = str(model_config.get("device", "cpu")).lower()
+    if device not in ("cpu", "cuda"):
+        raise WorkflowError("DPCTW device must be 'cpu' or 'cuda'")
+    return 1 if device == "cuda" else 0
+
+
+def requested_gpu_count(model):
+    return dpctw_gpu_resource() if model == "dpctw" else resource(model, "gpu")
 
 
 def hpc_resource(key):
@@ -88,12 +102,12 @@ def capture_hardware(model):
         "processor": platform.processor(),
         "logical_cpu_count": os.cpu_count(),
         "requested_threads": int(resource(model, "threads")),
-        "requested_gpu_count": int(resource(model, "gpu")),
+        "requested_gpu_count": int(requested_gpu_count(model)),
         "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
         "slurm_cluster_name": os.environ.get("SLURM_CLUSTER_NAME"),
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
     }
-    if int(resource(model, "gpu")):
+    if int(requested_gpu_count(model)):
         executable = shutil.which("nvidia-smi")
         if executable:
             query = subprocess.run(
@@ -189,7 +203,7 @@ rule fit_dpctw:
         alignment=f"{OUTPUT_ROOT}/{{dataset}}/dpctw/alignment.npz",
     threads: resource("dpctw", "threads")
     resources:
-        gpu=resource("dpctw", "gpu"),
+        gpu=dpctw_gpu_resource(),
         mem_mb=resource("dpctw", "mem_mb"),
         runtime=resource("dpctw", "runtime"),
         slurm_account=hpc_resource("slurm_account"),

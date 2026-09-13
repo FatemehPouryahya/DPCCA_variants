@@ -10,7 +10,10 @@ import numpy as np
 from data.agneuro_adapter import BenchmarkDataset
 
 
-def squared_distance_matrix(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+def squared_distance_matrix(x: np.ndarray, y: np.ndarray, device: str = "cpu") -> np.ndarray:
+    if device == "cuda":
+        from .torch_backend import squared_distance_matrix_cuda
+        return squared_distance_matrix_cuda(x, y)
     x_norm = np.sum(x * x, axis=1)[:, None]
     y_norm = np.sum(y * y, axis=1)[None, :]
     return np.maximum(x_norm + y_norm - 2.0 * x @ y.T, 0.0)
@@ -79,8 +82,13 @@ def _inverse_sqrt(covariance: np.ndarray, ridge: float = 1e-6) -> np.ndarray:
     return (eigenvectors * (1.0 / np.sqrt(np.maximum(eigenvalues, ridge)))) @ eigenvectors.T
 
 
-def observation_initialization(x: np.ndarray, y: np.ndarray, dimensions: int) -> tuple[np.ndarray, np.ndarray]:
+def observation_initialization(
+    x: np.ndarray, y: np.ndarray, dimensions: int, device: str = "cpu",
+) -> tuple[np.ndarray, np.ndarray]:
     """Published CTW-style CCA projections ``V_i^T X_i`` for iteration zero."""
+    if device == "cuda":
+        from .torch_backend import observation_initialization_cuda
+        return observation_initialization_cuda(x, y, dimensions)
     paired = min(len(x), len(y))
     x_centered = x - x[:paired].mean(axis=0, keepdims=True)
     y_centered = y - y[:paired].mean(axis=0, keepdims=True)
@@ -112,6 +120,9 @@ def alternating_dpctw(dataset: BenchmarkDataset, config: dict[str, Any]):
     latent = config["latent"]
     dpcca_config = config.get("dpcca", {})
     alignment_config = config.get("alignment", {})
+    device = str(config.get("device", "cpu")).lower()
+    if device not in ("cpu", "cuda"):
+        raise ValueError("DPCTW device must be 'cpu' or 'cuda'")
     ds = int(latent["shared_dim"])
     compact: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
     local_paths: list[np.ndarray] = []
@@ -122,13 +133,16 @@ def alternating_dpctw(dataset: BenchmarkDataset, config: dict[str, Any]):
         x = dataset.x[batch_index, indices]
         y = dataset.y[batch_index, indices]
         compact.append((x, y, indices))
-        x_initial, y_initial = observation_initialization(x, y, ds)
+        x_initial, y_initial = observation_initialization(x, y, ds, device=device)
         path, _ = dtw_path(
-            squared_distance_matrix(x_initial, y_initial), alignment_config.get("band_radius")
+            squared_distance_matrix(x_initial, y_initial, device=device), alignment_config.get("band_radius")
         )
         local_paths.append(path)
 
-    model = DPCCAModel(ds, int(latent["x_private_dim"]), int(latent["y_private_dim"]), int(config.get("seed", 0)))
+    model = DPCCAModel(
+        ds, int(latent["x_private_dim"]), int(latent["y_private_dim"]),
+        int(config.get("seed", 0)), device=device,
+    )
     history: list[dict[str, Any]] = []
     previous_objective: float | None = None
     max_alignment_iterations = int(alignment_config.get("max_iterations", 5))
@@ -143,7 +157,7 @@ def alternating_dpctw(dataset: BenchmarkDataset, config: dict[str, Any]):
         for x, y, _ in compact:
             x_shared = model.infer_x(x).smoothed_mean[:, :ds]
             y_shared = model.infer_y(y).smoothed_mean[:, :ds]
-            distance = squared_distance_matrix(x_shared, y_shared)
+            distance = squared_distance_matrix(x_shared, y_shared, device=device)
             path, cost = dtw_path(distance, alignment_config.get("band_radius"))
             validate_path(path, len(x), len(y))
             new_paths.append(path)

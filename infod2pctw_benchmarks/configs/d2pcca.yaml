@@ -10,6 +10,8 @@ data:
   standardize_y: true
 
 d2pcca:
+  # Refuse an accidental CPU fallback for the HPC benchmark.
+  device: cuda
   epochs: 200
 
   emission_dims: [20, 20]

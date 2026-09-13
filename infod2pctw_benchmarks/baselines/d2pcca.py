@@ -69,7 +69,13 @@ class D2PCCABaseline:
             num_iafs=int(method.get("num_iafs", 0)),
             iaf_dim=int(method.get("iaf_dim", 50)),
         )
-        self.model.to(self.model.device)
+        requested_device = torch.device(method.get("device", self.model.device))
+        if requested_device.type == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError(
+                "D²PCCA is configured for CUDA, but no GPU is visible to PyTorch"
+            )
+        self.model.device = requested_device
+        self.model.to(requested_device)
         optimizer_config = method.get("optimizer", {})
         self.optimizer = ClippedAdam({
             "lr": float(optimizer_config.get("lr", 3e-4)),

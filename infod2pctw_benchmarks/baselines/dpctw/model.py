@@ -15,11 +15,21 @@ from .rts import RTSResult, kalman_filter_smoother
 
 
 class DPCCAModel:
-    def __init__(self, shared_dim: int = 8, x_private_dim: int = 4, y_private_dim: int = 4, seed: int = 0):
+    def __init__(
+        self, shared_dim: int = 8, x_private_dim: int = 4,
+        y_private_dim: int = 4, seed: int = 0, device: str = "cpu",
+    ):
         self.shared_dim = int(shared_dim)
         self.x_private_dim = int(x_private_dim)
         self.y_private_dim = int(y_private_dim)
         self.seed = int(seed)
+        self.device = str(device).lower()
+        if self.device not in ("cpu", "cuda"):
+            raise ValueError("DPCTW device must be 'cpu' or 'cuda'")
+        self.backend = None
+        if self.device == "cuda":
+            from .torch_backend import cuda_backend
+            self.backend = cuda_backend()
         self.parameters: DPCCAParameters | None = None
         self.history: list[float] = []
 
@@ -27,16 +37,28 @@ class DPCCAModel:
         self, pairs: list[tuple[np.ndarray, np.ndarray]], max_iterations: int = 20,
         tolerance: float = 1e-4, warm_start: bool = False,
     ) -> "DPCCAModel":
-        self.parameters, self.history = fit_em(
-            pairs, self.shared_dim, self.x_private_dim, self.y_private_dim,
-            max_iterations=max_iterations, tolerance=tolerance, seed=self.seed,
-            initial_parameters=self.parameters if warm_start else None,
-        )
+        if self.device == "cuda":
+            from .cuda_em import fit_em as fit_em_cuda
+            self.parameters, self.history = fit_em_cuda(
+                pairs, self.shared_dim, self.x_private_dim, self.y_private_dim,
+                max_iterations=max_iterations, tolerance=tolerance, seed=self.seed,
+                initial_parameters=self.parameters if warm_start else None,
+                backend=self.backend,
+            )
+        else:
+            self.parameters, self.history = fit_em(
+                pairs, self.shared_dim, self.x_private_dim, self.y_private_dim,
+                max_iterations=max_iterations, tolerance=tolerance, seed=self.seed,
+                initial_parameters=self.parameters if warm_start else None,
+            )
         return self
 
     def smooth_joint(self, x: np.ndarray, y: np.ndarray) -> RTSResult:
         if self.parameters is None:
             raise RuntimeError("model is not fitted")
+        if self.device == "cuda":
+            from .cuda_em import expectation
+            return expectation(self.parameters, x, y, backend=self.backend)
         from .em import expectation
         return expectation(self.parameters, x, y)
 
@@ -44,6 +66,9 @@ class DPCCAModel:
         if self.parameters is None:
             raise RuntimeError("model is not fitted")
         p = self.parameters
+        if self.device == "cuda":
+            from .torch_backend import infer_view_cuda
+            return infer_view_cuda(p, values, view, self.backend)
         ds, du, dv = p.dimensions
         if view == "x":
             indices = np.r_[0:ds, ds:ds + du]
@@ -79,11 +104,18 @@ class DPCCAModel:
             p.x_shared_loading, p.x_private_loading, p.y_shared_loading, p.y_private_loading,
             p.x_noise, p.y_noise, p.initial_mean, p.initial_covariance,
         )
+        if self.device == "cuda":
+            return int(sum(self.backend.size(value) for value in fields))
         return int(sum(value.size for value in fields))
 
     def state_dict(self) -> dict[str, np.ndarray]:
         if self.parameters is None:
             raise RuntimeError("model is not fitted")
+        if self.device == "cuda":
+            return {
+                name: self.backend.to_numpy(value)
+                for name, value in vars(self.parameters).items()
+            }
         return {name: np.asarray(value) for name, value in vars(self.parameters).items()}
 
 
@@ -120,16 +152,39 @@ class DPCTWBaseline:
                 continue
             x_result = self.model.infer_x(dataset.x[batch_index, valid_indices])
             y_result = self.model.infer_y(dataset.y[batch_index, valid_indices])
-            self.alignment.x_shared[batch_index, valid_indices] = x_result.smoothed_mean[:, :ds]
-            self.alignment.y_shared[batch_index, valid_indices] = y_result.smoothed_mean[:, :ds]
-            shared[batch_index, valid_indices] = x_result.smoothed_mean[:, :ds]
-            x_private[batch_index, valid_indices] = x_result.smoothed_mean[:, ds:]
-            y_private[batch_index, valid_indices] = y_result.smoothed_mean[:, ds:]
+            if self.model.device == "cuda":
+                x_mean = self.model.backend.to_numpy(x_result.smoothed_mean)
+                y_mean = self.model.backend.to_numpy(y_result.smoothed_mean)
+            else:
+                x_mean = x_result.smoothed_mean
+                y_mean = y_result.smoothed_mean
+            self.alignment.x_shared[batch_index, valid_indices] = x_mean[:, :ds]
+            self.alignment.y_shared[batch_index, valid_indices] = y_mean[:, :ds]
+            shared[batch_index, valid_indices] = x_mean[:, :ds]
+            x_private[batch_index, valid_indices] = x_mean[:, ds:]
+            y_private[batch_index, valid_indices] = y_mean[:, ds:]
             p = self.model.parameters
             x_state = x_result.smoothed_mean
             y_state = y_result.smoothed_mean
-            x_recon[batch_index, valid_indices] = x_state @ np.concatenate([p.x_shared_loading, p.x_private_loading], axis=1).T
-            y_recon[batch_index, valid_indices] = y_state @ np.concatenate([p.y_shared_loading, p.y_private_loading], axis=1).T
+            if self.model.device == "cuda":
+                from .torch_backend import reconstruct_cuda
+                x_loading = self.model.backend.concatenate(
+                    [p.x_shared_loading, p.x_private_loading], axis=1
+                )
+                y_loading = self.model.backend.concatenate(
+                    [p.y_shared_loading, p.y_private_loading], axis=1
+                )
+                x_recon[batch_index, valid_indices] = reconstruct_cuda(
+                    x_state, x_loading, self.model.backend
+                )
+                y_recon[batch_index, valid_indices] = reconstruct_cuda(
+                    y_state, y_loading, self.model.backend
+                )
+            else:
+                x_loading = np.concatenate([p.x_shared_loading, p.x_private_loading], axis=1)
+                y_loading = np.concatenate([p.y_shared_loading, p.y_private_loading], axis=1)
+                x_recon[batch_index, valid_indices] = x_state @ x_loading.T
+                y_recon[batch_index, valid_indices] = y_state @ y_loading.T
         inference_runtime = time.perf_counter() - started
         deviations = []
         lengths = []
@@ -153,6 +208,11 @@ class DPCTWBaseline:
                 "path_deviation_from_diagonal": deviations,
                 "shared_latent_axis": "x native time; y-view shared posterior saved in alignment.npz",
                 "iteration_zero": self.alignment.initialization,
+                "device": self.model.device,
+                "cuda_cpu_bound_component": (
+                    "exact DTW dynamic-programming recurrence and traceback"
+                    if self.model.device == "cuda" else None
+                ),
             }, inference_runtime_seconds=inference_runtime,
         )
 

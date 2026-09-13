@@ -1,5 +1,8 @@
 seed: 0
 
+# Select the existing NumPy/SciPy CPU backend or the PyTorch CUDA backend.
+device: cpu
+
 latent:
   shared_dim: 8
   x_private_dim: 4

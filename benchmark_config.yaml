@@ -1,7 +1,7 @@
 schema_version: infod2pctw-manuscript-benchmark-v1
 
-training_configs_approved: false
-execution_environment: local  # override with hpc on the cluster
+training_configs_approved: true #false
+execution_environment: hpc #local  # override with hpc on the cluster
 
 paths:
   benchmark_root: infod2pctw_benchmarks
