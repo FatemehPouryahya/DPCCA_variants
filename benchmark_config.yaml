@@ -1,0 +1,110 @@
+schema_version: infod2pctw-manuscript-benchmark-v1
+
+training_configs_approved: false
+execution_environment: local  # override with hpc on the cluster
+
+paths:
+  benchmark_root: infod2pctw_benchmarks
+  output_root: results
+  local_python: python
+  hpc_python: python
+
+hpc:
+  slurm_account: def-rozeske
+  gpu_model: h100
+
+datasets:
+  lfp:
+    identity: esc
+    modality_evidence: released LFP clock and spectral-feature interpolation
+    bundle:
+      local: data/AgNeuro_bundle/Cohorts/esc/infod2pctw/latent_state/bundles/esc
+      hpc: /scratch/fpour100/infod2pctw/data/AgNeuro_bundle/Cohorts/esc/infod2pctw/latent_state/bundles/esc
+    infod2pctw_result:
+      local: "temp/infod2pctwc_projects copy/projects/2026_09_12-22_51_03"
+      hpc: /scratch/fpour100/infod2pctw/data/projects/2026_09_12-22_51_03
+
+    infod2pctw_evaluation:
+      local: "temp/infod2pctwc_projects copy/projects/2026_09_12-22_51_03/benchmark_export"
+      hpc: /scratch/fpour100/infod2pctw/data/projects/2026_09_12-22_51_03/benchmark_export
+
+  fp:
+    identity: fp
+    modality_evidence: continuous processed fiber-photometry signal
+    bundle:
+      local: data/AgNeuro_bundle/Cohorts/fp/infod2pctw/latent_state/bundles/fp
+      hpc: /scratch/fpour100/infod2pctw/data/AgNeuro_bundle/Cohorts/fp/infod2pctw/latent_state/bundles/fp
+    infod2pctw_result:
+      local: "temp/infod2pctwc_projects copy/projects/2026_09_12-18_23_13"
+      hpc: /scratch/fpour100/infod2pctw/data/projects/2026_09_12-18_23_13
+    infod2pctw_evaluation:
+      local: "temp/infod2pctwc_projects copy/projects/2026_09_12-18_23_13/benchmark_export"
+      hpc: /scratch/fpour100/infod2pctw/data/projects/2026_09_12-18_23_13/benchmark_export
+
+  miniscope:
+    identity: dms/2JH3_NoPart
+    modality_evidence: processed calcium observations on a miniscope acquisition clock
+    bundle:
+      local: data/AgNeuro_bundle/Cohorts/dms/infod2pctw/latent_state/bundles/dms/2JH3_NoPart
+      hpc: /scratch/fpour100/infod2pctw/data/AgNeuro_bundle/Cohorts/dms/infod2pctw/latent_state/bundles/dms/2JH3_NoPart
+    infod2pctw_result:
+      local: "temp/infod2pctwc_projects copy/projects/2026_09_13-04_20_32"
+      hpc: /scratch/fpour100/infod2pctw/data/projects/2026_09_13-04_20_32
+    infod2pctw_evaluation:
+      local: "temp/infod2pctwc_projects copy/projects/2026_09_13-04_20_32/benchmark_export"
+      hpc: /scratch/fpour100/infod2pctw/data/projects/2026_09_13-04_20_32/benchmark_export
+
+models:
+  d2pcca:
+    config: infod2pctw_benchmarks/configs/d2pcca.yaml
+  infodpcca:
+    config: infod2pctw_benchmarks/configs/infodpcca.yaml
+  dpctw:
+    config: infod2pctw_benchmarks/configs/dpctw.yaml
+  infod2pctw:
+    config: infod2pctw/configs/infod2pctw_config.yaml
+    recorded_git_commit: ec04b4191ee517d9e105f0a7a10dc7f1465786fa
+    retrain: false
+
+
+proposed_training:
+  d2pcca:
+    epochs: 301
+    annealing_epochs: 100
+    minimum_annealing_factor: 0.01
+  infodpcca:
+    stage_I_epochs: 1000
+    stage_II_epochs: 1500
+    alpha: 1.0
+    beta: 0.1
+  dpctw:
+    max_em_iterations: 50
+    em_tolerance: 0.0001
+    max_alignment_iterations: 20
+    alignment_tolerance: 0.0001
+    band_radius_frames: 100
+  infod2pctw:
+    stage_I_epochs: 80
+    alignment_warmup_epochs: 20
+    alignment_update_every_epochs: 5
+    max_alignment_updates: 12
+    convergence_patience: 3
+    stage_II_epochs: 50
+    band_radius_fraction: 0.02
+
+resources:
+  d2pcca:
+    threads: 8
+    gpu: 1
+    mem_mb: 65536
+    runtime: 2880
+  infodpcca:
+    threads: 8
+    gpu: 1
+    mem_mb: 98304
+    runtime: 4320
+  dpctw:
+    threads: 16
+    gpu: 0
+    mem_mb: 262144
+    runtime: 5760

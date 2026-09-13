@@ -1,0 +1,76 @@
+# --- Python & notebooks ---
+__pycache__/
+*.py[cod]
+*.pyo
+.ipynb_checkpoints/
+.DS_Store
+*.ipynb
+
+# --- KPMS / DLC / ADPT data & artifacts ---
+data/
+datasets/
+raw/
+interim/
+processed/
+results/
+logs/
+output/
+figures/tmp/
+tmp/
+temp_scr/
+temp/
+cache/
+ssm/notebooks/
+deeplabcut/examples/
+*.h5
+*.npz
+*.npy
+*.pkl
+*.pickle
+*.ckpt
+*.pt
+*.pth
+*.joblib
+*.mat
+infod2pctw/
+
+# --- Videos & images (keep out unless tiny) ---
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.gif
+*.tif
+*.tiff
+*.png
+*.jpg
+*.jpeg
+*.bmp
+
+# --- Logs & HPC ---
+*.log
+*.out
+*.err
+slurm-*.out
+slurm-*.err
+
+# --- Env / containers (DON'T commit .sif here) ---
+.env
+.venv/
+venv/
+*.conda
+*.yml~
+*.yaml~
+.poetry/
+.pytest_cache/
+*.sif
+.snakemake/
+.nv/
+# --- OS / editors ---
+Thumbs.db
+.vscode/
+.idea/
+._*
+.DS_Store
+*:Zone.Identifier
+
