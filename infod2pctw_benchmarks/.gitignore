@@ -1,0 +1,9 @@
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+results/**
+!results/.gitkeep
+third_party/D2PCCA/
+third_party/InfoDPCCA/

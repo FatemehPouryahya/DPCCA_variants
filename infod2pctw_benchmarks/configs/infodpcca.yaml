@@ -1,0 +1,98 @@
+seed: 0
+
+latent:
+  shared_dim: 8
+  x_private_dim: 4
+  y_private_dim: 4
+
+data:
+  standardize_x: true
+  standardize_y: true
+
+infodpcca:
+  stage_I_epochs: 80
+  stage_II_epochs: 50
+
+  emission_x_dim: 20
+  emission_y_dim: 20
+
+  rnn_x_dim: 30
+  rnn_y_dim: 30
+  rnn_layers: 1
+  rnn_dropout_rate: 0.0
+
+  # Keep the values used by the adapted official implementation.
+  beta: 0.00001
+  alpha: 1.0
+
+  residual_connection: true
+
+  rnn4vi: false
+  rnn_vi_dim: 60
+
+  # HPC run.
+  device: cuda
+
+  stage_I_optimizer:
+    lr: 0.0003
+    betas: [0.96, 0.999]
+    clip_norm: 10.0
+    lrd: 0.99996
+    weight_decay: 2.0
+
+  stage_II_optimizer:
+    lr: 0.0003
+    betas: [0.96, 0.999]
+    clip_norm: 5.0
+    lrd: 0.99996
+    weight_decay: 2.0
+
+output:
+  save_latents: true
+  save_reconstructions: true
+  save_history: true
+
+# seed: 0
+
+# latent:
+#   shared_dim: 8
+#   x_private_dim: 4
+#   y_private_dim: 4
+
+# data:
+#   standardize_x: true
+#   standardize_y: true
+
+# infodpcca:
+#   # Manuscript schedule matched to the corresponding Info-D2PCTW stages.
+#   stage_I_epochs: 80
+#   stage_II_epochs: 50
+#   emission_x_dim: 20
+#   emission_y_dim: 20
+#   rnn_x_dim: 30
+#   rnn_y_dim: 30
+#   rnn_layers: 1
+#   rnn_dropout_rate: 0.0
+#   beta: 0.00001
+#   alpha: 1.0
+#   residual_connection: true
+#   rnn4vi: false
+#   rnn_vi_dim: 60
+#   device: cpu
+#   stage_I_optimizer:
+#     lr: 0.0003
+#     betas: [0.96, 0.999]
+#     clip_norm: 10.0
+#     lrd: 0.99996
+#     weight_decay: 2.0
+#   stage_II_optimizer:
+#     lr: 0.0003
+#     betas: [0.96, 0.999]
+#     clip_norm: 5.0
+#     lrd: 0.99996
+#     weight_decay: 2.0
+
+# output:
+#   save_latents: true
+#   save_reconstructions: true
+#   save_history: true

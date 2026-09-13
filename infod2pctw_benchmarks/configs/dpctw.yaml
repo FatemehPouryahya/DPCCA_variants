@@ -1,0 +1,51 @@
+seed: 0
+
+latent:
+  shared_dim: 8
+  x_private_dim: 4
+  y_private_dim: 4
+
+data:
+  standardize_x: true
+  standardize_y: true
+
+dpcca:
+  max_em_iterations: 50
+  tolerance: 0.0001
+
+alignment:
+  max_iterations: 10
+  tolerance: 0.0001
+
+  # Absolute Sakoe-Chiba radius in the current benchmark implementation.
+  band_radius: 100
+
+output:
+  save_latents: true
+  save_reconstructions: true
+  save_history: true
+  
+# seed: 0
+
+# latent:
+#   shared_dim: 8
+#   x_private_dim: 4
+#   y_private_dim: 4
+
+# data:
+#   standardize_x: true
+#   standardize_y: true
+
+# dpcca:
+#   max_em_iterations: 50
+#   tolerance: 0.0001
+
+# alignment:
+#   max_iterations: 10
+#   tolerance: 0.0001
+#   band_radius: 100
+
+# output:
+#   save_latents: true
+#   save_reconstructions: true
+#   save_history: true
