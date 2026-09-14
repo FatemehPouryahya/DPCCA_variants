@@ -3,6 +3,13 @@ schema_version: infod2pctw-manuscript-benchmark-v1
 training_configs_approved: true #false
 execution_environment: hpc #local  # override with hpc on the cluster
 
+# Edit only this block to choose the workflow scope.
+run:
+  datasets: [miniscope]
+  models: [infodpcca]
+  evaluate: false
+  build_manuscript_table: false
+
 paths:
   benchmark_root: infod2pctw_benchmarks
   output_root: results
@@ -56,12 +63,16 @@ datasets:
 
 models:
   d2pcca:
+    kind: baseline
     config: infod2pctw_benchmarks/configs/d2pcca.yaml
   infodpcca:
+    kind: baseline
     config: infod2pctw_benchmarks/configs/infodpcca.yaml
   dpctw:
+    kind: baseline
     config: infod2pctw_benchmarks/configs/dpctw.yaml
   infod2pctw:
+    kind: reference
     config: infod2pctw/configs/infod2pctw_config.yaml
     recorded_git_commit: ec04b4191ee517d9e105f0a7a10dc7f1465786fa
     retrain: false

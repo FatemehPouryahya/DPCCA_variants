@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import socket
 import subprocess
@@ -14,8 +15,58 @@ import yaml
 from snakemake.exceptions import WorkflowError
 
 
-DATASETS = tuple(config["datasets"])
-BASELINES = ("d2pcca", "infodpcca", "dpctw")
+RUN = config.get("run")
+if not isinstance(RUN, dict):
+    raise WorkflowError("benchmark_config.yaml must define a 'run' mapping")
+
+AVAILABLE_DATASETS = tuple(config.get("datasets", {}))
+AVAILABLE_BASELINES = tuple(
+    name
+    for name, definition in config.get("models", {}).items()
+    if definition.get("kind") == "baseline"
+)
+
+
+def selected_names(key, available):
+    selected = RUN.get(key)
+    if not isinstance(selected, list) or not selected:
+        raise WorkflowError(f"run.{key} must be a non-empty list")
+    if len(selected) != len(set(selected)):
+        raise WorkflowError(f"run.{key} contains duplicate names")
+    unknown = sorted(set(selected) - set(available))
+    if unknown:
+        raise WorkflowError(
+            f"Unknown run.{key}: {', '.join(unknown)}. "
+            f"Available choices: {', '.join(available)}"
+        )
+    return tuple(selected)
+
+
+DATASETS = selected_names("datasets", AVAILABLE_DATASETS)
+BASELINES = selected_names("models", AVAILABLE_BASELINES)
+DO_EVALUATE = RUN.get("evaluate", False)
+BUILD_MANUSCRIPT_TABLE = RUN.get("build_manuscript_table", False)
+if not isinstance(DO_EVALUATE, bool):
+    raise WorkflowError("run.evaluate must be true or false")
+if not isinstance(BUILD_MANUSCRIPT_TABLE, bool):
+    raise WorkflowError("run.build_manuscript_table must be true or false")
+if BUILD_MANUSCRIPT_TABLE and not DO_EVALUATE:
+    raise WorkflowError(
+        "run.build_manuscript_table requires run.evaluate: true"
+    )
+if DO_EVALUATE:
+    missing_evaluation_config = [
+        dataset for dataset in DATASETS
+        if not all(
+            field in config["datasets"][dataset]
+            for field in ("infod2pctw_result", "infod2pctw_evaluation")
+        )
+    ]
+    if missing_evaluation_config:
+        raise WorkflowError(
+            "Evaluation requires infod2pctw_result and infod2pctw_evaluation "
+            "for selected datasets: " + ", ".join(missing_evaluation_config)
+        )
 ENVIRONMENT = config.get("execution_environment", "local")
 if ENVIRONMENT not in ("local", "hpc"):
     raise WorkflowError("execution_environment must be 'local' or 'hpc'")
@@ -28,7 +79,7 @@ EVALUATE = BENCHMARK_ROOT / "evaluate.py"
 APPROVED = bool(config.get("training_configs_approved", False))
 
 wildcard_constraints:
-    dataset="lfp|fp|miniscope"
+    dataset="|".join(re.escape(dataset) for dataset in DATASETS)
 
 
 def environment_path(dataset, field):
@@ -95,6 +146,20 @@ def all_baseline_results():
     ]
 
 
+TRAINING_TARGETS = all_baseline_results()
+EVALUATION_TARGETS = (
+    expand(f"{OUTPUT_ROOT}/{{dataset}}/comparison.csv", dataset=DATASETS)
+    if DO_EVALUATE else []
+)
+MANUSCRIPT_TARGETS = (
+    [
+        f"{OUTPUT_ROOT}/manuscript/model_comparison.csv",
+        f"{OUTPUT_ROOT}/manuscript/run_manifest.csv",
+    ]
+    if BUILD_MANUSCRIPT_TABLE else []
+)
+
+
 def capture_hardware(model):
     record = {
         "hostname": socket.gethostname(),
@@ -144,10 +209,7 @@ def execute_baseline(model, dataset, outputs):
 
 rule all:
     input:
-        expand(f"{OUTPUT_ROOT}/{{dataset}}/comparison.csv", dataset=DATASETS),
-        expand(f"{OUTPUT_ROOT}/{{dataset}}/infod2pctw/reference.json", dataset=DATASETS),
-        f"{OUTPUT_ROOT}/manuscript/model_comparison.csv",
-        f"{OUTPUT_ROOT}/manuscript/run_manifest.csv",
+        TRAINING_TARGETS + EVALUATION_TARGETS + MANUSCRIPT_TARGETS
 
 
 rule fit_d2pcca:
@@ -262,23 +324,23 @@ rule validate_infod2pctw_export:
 
 rule evaluate_dataset:
     input:
-        d2pcca=f"{OUTPUT_ROOT}/{{dataset}}/d2pcca/result.json",
-        infodpcca=f"{OUTPUT_ROOT}/{{dataset}}/infodpcca/result.json",
-        dpctw=f"{OUTPUT_ROOT}/{{dataset}}/dpctw/result.json",
+        baseline_results=[
+            f"{OUTPUT_ROOT}/{{dataset}}/{model}/result.json"
+            for model in BASELINES
+        ],
         info_ready=f"{OUTPUT_ROOT}/{{dataset}}/infod2pctw/.evaluation_ready",
     output:
         comparison=f"{OUTPUT_ROOT}/{{dataset}}/comparison.csv",
-        d2pcca_metrics=f"{OUTPUT_ROOT}/{{dataset}}/d2pcca/metrics.json",
-        infodpcca_metrics=f"{OUTPUT_ROOT}/{{dataset}}/infodpcca/metrics.json",
-        dpctw_metrics=f"{OUTPUT_ROOT}/{{dataset}}/dpctw/metrics.json",
+        baseline_metrics=[
+            f"{OUTPUT_ROOT}/{{dataset}}/{model}/metrics.json"
+            for model in BASELINES
+        ],
         infod2pctw_metrics=f"{OUTPUT_ROOT}/{{dataset}}/infod2pctw/metrics.json",
     run:
-        result_dirs = [
-            Path(str(input.d2pcca)).parent,
-            Path(str(input.infodpcca)).parent,
-            Path(str(input.dpctw)).parent,
-            Path(environment_path(wildcards.dataset, "infod2pctw_evaluation")),
-        ]
+        result_dirs = [Path(str(path)).parent for path in input.baseline_results]
+        result_dirs.append(
+            Path(environment_path(wildcards.dataset, "infod2pctw_evaluation"))
+        )
         with tempfile.NamedTemporaryFile(suffix=".csv") as temporary:
             subprocess.run(
                 [
