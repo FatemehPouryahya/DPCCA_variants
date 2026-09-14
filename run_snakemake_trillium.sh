@@ -2,7 +2,7 @@
 #SBATCH --account=def-rozeske
 #SBATCH --gpus-per-node=h100:1
 #SBATCH --cpus-per-task=4
-#SBATCH --time=00:30:00
+#SBATCH --time=00:17:00
 #SBATCH --nodes=1
 #SBATCH --job-name=dpcca_bench_controller
 #SBATCH --output=dpcca_bench_controller_%j.log
