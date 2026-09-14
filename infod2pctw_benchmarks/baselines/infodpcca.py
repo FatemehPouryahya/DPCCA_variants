@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import random
 import time
@@ -29,8 +30,9 @@ def _load_author_module():
 
 
 class InfoDPCCABaseline:
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any], output_dir: str | Path | None = None):
         self.config = config
+        self.output_dir = Path(output_dir) if output_dir is not None else None
         self.stage1 = None
         self.stage2 = None
         self.stage1_optimizer = None
@@ -80,6 +82,76 @@ class InfoDPCCABaseline:
         svi1 = SVI(self.stage1.model, self.stage1.guide, self.stage1_optimizer, Trace_ELBO())
         return author, svi1
 
+    def _checkpoint_directory(self, stage: str) -> Path | None:
+        if self.output_dir is None:
+            return None
+        return self.output_dir / "checkpoints" / "infodpcca" / stage
+
+    def _save_checkpoint(
+        self, stage: str, model: Any, optimizer: Any, completed_epoch: int,
+        stage_completed: bool, runtime_seconds: float,
+    ) -> None:
+        checkpoint_dir = self._checkpoint_directory(stage)
+        if checkpoint_dir is None:
+            return
+        import torch
+
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        suffix = f"{completed_epoch:06d}"
+        model_path = checkpoint_dir / f"model_epoch_{suffix}.pt"
+        optimizer_path = checkpoint_dir / f"optimizer_epoch_{suffix}.pt"
+        model_temporary = checkpoint_dir / f".model_epoch_{suffix}.tmp"
+        optimizer_temporary = checkpoint_dir / f".optimizer_epoch_{suffix}.tmp"
+        state_path = checkpoint_dir / "state.json"
+        state_temporary = checkpoint_dir / ".state.json.tmp"
+
+        torch.save(model.state_dict(), model_temporary)
+        optimizer.save(str(optimizer_temporary))
+        model_temporary.replace(model_path)
+        optimizer_temporary.replace(optimizer_path)
+        state = {
+            "stage": stage,
+            "completed_epoch": int(completed_epoch),
+            "next_epoch": int(completed_epoch) + 1,
+            "stage_completed": bool(stage_completed),
+            "model_file": model_path.name,
+            "optimizer_file": optimizer_path.name,
+            "history": self.history,
+            "training_runtime_seconds": float(runtime_seconds),
+        }
+        state_temporary.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
+        state_temporary.replace(state_path)
+
+    def _load_checkpoint(self, stage: str, model: Any, optimizer: Any) -> int:
+        checkpoint_dir = self._checkpoint_directory(stage)
+        if checkpoint_dir is None:
+            return 0
+        state_path = checkpoint_dir / "state.json"
+        if not state_path.exists():
+            return 0
+        import torch
+
+        state = json.loads(state_path.read_text())
+        if state.get("stage") != stage:
+            raise RuntimeError(f"invalid InfoDPCCA checkpoint stage in {state_path}")
+        model_path = checkpoint_dir / state["model_file"]
+        optimizer_path = checkpoint_dir / state["optimizer_file"]
+        if not model_path.exists() or not optimizer_path.exists():
+            raise RuntimeError(f"incomplete InfoDPCCA checkpoint recorded by {state_path}")
+        model.load_state_dict(torch.load(model_path, map_location=model.device))
+        optimizer.load(str(optimizer_path))
+        history = state.get("history")
+        if isinstance(history, dict):
+            self.history = {
+                "stage_I": list(history.get("stage_I", [])),
+                "stage_II": list(history.get("stage_II", [])),
+            }
+        self.training_runtime_seconds = max(
+            self.training_runtime_seconds,
+            float(state.get("training_runtime_seconds", 0.0)),
+        )
+        return int(state["completed_epoch"])
+
     def fit(self, dataset: BenchmarkDataset) -> "InfoDPCCABaseline":
         import torch
         import pyro
@@ -90,8 +162,17 @@ class InfoDPCCABaseline:
             raise ValueError("InfoDPCCA requires at least one contiguous valid segment of length >= 2")
         author, svi1 = self._build(dataset)
         method = self.config.get("infodpcca", {})
-        started = time.perf_counter()
-        for _ in range(int(method.get("stage_I_epochs", 1))):
+        checkpoint_every = int(method.get("checkpoint_every_epochs", 1))
+        if checkpoint_every < 1:
+            raise ValueError("InfoDPCCA checkpoint_every_epochs must be positive")
+
+        stage_I_epochs = int(method.get("stage_I_epochs", 1))
+        stage_I_start = self._load_checkpoint(
+            "stage_I", self.stage1, self.stage1_optimizer
+        )
+        stage_started = time.perf_counter()
+        accumulated_runtime = self.training_runtime_seconds
+        for epoch in range(stage_I_start, stage_I_epochs):
             loss = 0.0
             count = 0
             for _, _, x, y in segments:
@@ -103,6 +184,16 @@ class InfoDPCCABaseline:
             if not np.isfinite(value):
                 raise FloatingPointError("InfoDPCCA stage-I objective became non-finite")
             self.history["stage_I"].append(value)
+            completed_epoch = epoch + 1
+            if completed_epoch % checkpoint_every == 0 or completed_epoch == stage_I_epochs:
+                self._save_checkpoint(
+                    "stage_I", self.stage1, self.stage1_optimizer, completed_epoch,
+                    completed_epoch == stage_I_epochs,
+                    accumulated_runtime + time.perf_counter() - stage_started,
+                )
+        self.training_runtime_seconds = (
+            accumulated_runtime + time.perf_counter() - stage_started
+        )
 
         latent = self.config["latent"]
         device = self.stage1.device
@@ -125,7 +216,13 @@ class InfoDPCCABaseline:
         self.stage2.device = device
         self.stage2_optimizer = self._optimizer(method.get("stage_II_optimizer", {}), 5.0)
         svi2 = SVI(self.stage2.model, self.stage2.guide, self.stage2_optimizer, Trace_ELBO())
-        for _ in range(int(method.get("stage_II_epochs", 1))):
+        stage_II_epochs = int(method.get("stage_II_epochs", 1))
+        stage_II_start = self._load_checkpoint(
+            "stage_II", self.stage2, self.stage2_optimizer
+        )
+        stage_started = time.perf_counter()
+        accumulated_runtime = self.training_runtime_seconds
+        for epoch in range(stage_II_start, stage_II_epochs):
             loss = 0.0
             count = 0
             for _, _, x, y in segments:
@@ -137,7 +234,16 @@ class InfoDPCCABaseline:
             if not np.isfinite(value):
                 raise FloatingPointError("InfoDPCCA stage-II objective became non-finite")
             self.history["stage_II"].append(value)
-        self.training_runtime_seconds = time.perf_counter() - started
+            completed_epoch = epoch + 1
+            if completed_epoch % checkpoint_every == 0 or completed_epoch == stage_II_epochs:
+                self._save_checkpoint(
+                    "stage_II", self.stage2, self.stage2_optimizer, completed_epoch,
+                    completed_epoch == stage_II_epochs,
+                    accumulated_runtime + time.perf_counter() - stage_started,
+                )
+        self.training_runtime_seconds = (
+            accumulated_runtime + time.perf_counter() - stage_started
+        )
         return self
 
     def _infer_segment(self, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, ...]:

@@ -21,6 +21,7 @@ def run(model_name: str, data_path: str | Path, config_path: str | Path, output_
     dataset = raw.standardized(
         bool(data_config.get("standardize_x", True)), bool(data_config.get("standardize_y", True))
     )
+    output = Path(output_dir) if output_dir else ROOT / "results" / dataset.name / model_name
     if model_name == "d2pcca":
         from baselines.d2pcca import D2PCCABaseline, AUTHOR_REPOSITORY
         baseline = D2PCCABaseline(config)
@@ -28,7 +29,7 @@ def run(model_name: str, data_path: str | Path, config_path: str | Path, output_
         source = f"{AUTHOR_REPOSITORY}:D2PCCA.py"
     elif model_name == "infodpcca":
         from baselines.infodpcca import InfoDPCCABaseline, AUTHOR_REPOSITORY
-        baseline = InfoDPCCABaseline(config)
+        baseline = InfoDPCCABaseline(config, output_dir=output)
         third_party = ROOT / "third_party" / "InfoDPCCA"
         source = f"{AUTHOR_REPOSITORY}:InfoDPCCA.py"
     elif model_name == "dpctw":
@@ -41,7 +42,6 @@ def run(model_name: str, data_path: str | Path, config_path: str | Path, output_
 
     baseline.fit(dataset)
     result = baseline.transform(dataset)
-    output = Path(output_dir) if output_dir else ROOT / "results" / dataset.name / model_name
     provenance = build_provenance(
         dataset_metadata=dataset.metadata, benchmark_root=ROOT, third_party_root=third_party,
         source_implementation=source, seed=int(config.get("seed", 0)),

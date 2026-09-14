@@ -44,7 +44,7 @@ snakemake \
 
 # snakemake \
 #   --snakefile Snakefile \
-#   --directory . \
+#   --directory "$PROJECT_DIR" \
 #   --executor slurm \
 #   --jobs 1 \
 #   --set-resources fit_infodpcca:tasks_per_gpu=0 \
