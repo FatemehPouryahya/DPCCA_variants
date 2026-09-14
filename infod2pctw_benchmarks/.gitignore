@@ -5,5 +5,3 @@ __pycache__/
 .pytest_cache/
 results/**
 !results/.gitkeep
-third_party/D2PCCA/
-third_party/InfoDPCCA/
