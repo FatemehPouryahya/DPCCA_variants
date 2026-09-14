@@ -34,7 +34,7 @@ def run(model_name: str, data_path: str | Path, config_path: str | Path, output_
         source = f"{AUTHOR_REPOSITORY}:InfoDPCCA.py"
     elif model_name == "dpctw":
         from baselines.dpctw.model import DPCTWBaseline
-        baseline = DPCTWBaseline(config)
+        baseline = DPCTWBaseline(config, output_dir=output)
         third_party = None
         source = "local faithful linear-Gaussian DPCCA/DPCTW implementation"
     else:

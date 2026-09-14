@@ -3,6 +3,7 @@ import pytest
 import torch
 
 from baselines.dpctw.alignment import dtw_path, squared_distance_matrix, validate_path
+from baselines.dpctw.checkpoint import DPCTWCheckpointStore, checkpoint_signature
 from baselines.dpctw.model import DPCCAModel, DPCTWBaseline
 from baselines.dpctw.rts import kalman_filter_smoother
 from data.agneuro_adapter import BenchmarkDataset
@@ -84,6 +85,127 @@ def test_dpctw_cpu_smoke():
     assert np.all(np.isfinite(result.shared_latent))
     assert result.model_specific["device"] == "cpu"
     validate_path(baseline.alignment.paths[0], 18, 18)
+
+
+def assert_same_dpctw_fit(actual, expected):
+    assert actual.alignment.history == expected.alignment.history
+    assert len(actual.alignment.paths) == len(expected.alignment.paths)
+    for actual_path, expected_path in zip(actual.alignment.paths, expected.alignment.paths):
+        assert np.array_equal(actual_path, expected_path)
+    assert actual.model.history == expected.model.history
+    for name, expected_value in expected.model.state_dict().items():
+        np.testing.assert_allclose(actual.model.state_dict()[name], expected_value)
+
+
+def test_dpctw_resumes_after_completed_em_iteration(tmp_path, monkeypatch):
+    dataset = dpctw_dataset()
+    config = dpctw_config("cpu")
+    expected = DPCTWBaseline(config).fit(dataset)
+    output = tmp_path / "em_interruption"
+    original_save = DPCTWCheckpointStore.save
+    interrupted = False
+    resumed_states = []
+
+    def interrupt_after_first_em(self, state, parameters, paths):
+        nonlocal interrupted
+        result = original_save(self, state, parameters, paths)
+        if not interrupted and state["phase"] == "outer_em" and state["em_next_iteration"] == 1:
+            interrupted = True
+            raise RuntimeError("simulated Slurm termination")
+        if interrupted:
+            resumed_states.append(dict(state))
+        return result
+
+    monkeypatch.setattr(DPCTWCheckpointStore, "save", interrupt_after_first_em)
+    with pytest.raises(RuntimeError, match="simulated Slurm termination"):
+        DPCTWBaseline(config, output_dir=output).fit(dataset)
+
+    store = DPCTWCheckpointStore(output, checkpoint_signature(config, dataset))
+    saved = store.load()
+    assert saved["state"]["phase"] == "outer_em"
+    assert saved["state"]["em_next_iteration"] == 1
+    saved_runtime = saved["state"]["training_runtime_seconds"]
+
+    resumed = DPCTWBaseline(config, output_dir=output).fit(dataset)
+    assert resumed_states[0]["phase"] == "outer_em"
+    assert resumed_states[0]["em_next_iteration"] == 2
+    assert resumed.training_runtime_seconds >= saved_runtime
+    assert_same_dpctw_fit(resumed, expected)
+
+
+def test_dpctw_resumes_after_completed_outer_iteration(tmp_path, monkeypatch):
+    dataset = dpctw_dataset()
+    config = dpctw_config("cpu")
+    expected = DPCTWBaseline(config).fit(dataset)
+    output = tmp_path / "outer_interruption"
+    original_save = DPCTWCheckpointStore.save
+    interrupted = False
+    resumed_states = []
+
+    def interrupt_after_first_outer(self, state, parameters, paths):
+        nonlocal interrupted
+        result = original_save(self, state, parameters, paths)
+        if not interrupted and state["phase"] == "outer_complete" and state["outer_next_iteration"] == 1:
+            interrupted = True
+            raise RuntimeError("simulated Slurm termination")
+        if interrupted:
+            resumed_states.append(dict(state))
+        return result
+
+    monkeypatch.setattr(DPCTWCheckpointStore, "save", interrupt_after_first_outer)
+    with pytest.raises(RuntimeError, match="simulated Slurm termination"):
+        DPCTWBaseline(config, output_dir=output).fit(dataset)
+
+    store = DPCTWCheckpointStore(output, checkpoint_signature(config, dataset))
+    saved = store.load()
+    assert saved["state"]["phase"] == "outer_complete"
+    assert saved["state"]["outer_next_iteration"] == 1
+
+    resumed = DPCTWBaseline(config, output_dir=output).fit(dataset)
+    assert resumed_states[0]["phase"] == "outer_em"
+    assert resumed_states[0]["outer_iteration"] == 1
+    assert_same_dpctw_fit(resumed, expected)
+
+
+def test_dpctw_resumes_final_em_without_repeating_iteration(tmp_path, monkeypatch):
+    dataset = dpctw_dataset()
+    config = dpctw_config("cpu")
+    expected = DPCTWBaseline(config).fit(dataset)
+    output = tmp_path / "final_em_interruption"
+    original_save = DPCTWCheckpointStore.save
+    interrupted = False
+    resumed_states = []
+
+    def interrupt_during_final_em(self, state, parameters, paths):
+        nonlocal interrupted
+        result = original_save(self, state, parameters, paths)
+        if not interrupted and state["phase"] == "final_em" and state["em_next_iteration"] == 1:
+            interrupted = True
+            raise RuntimeError("simulated Slurm termination")
+        if interrupted:
+            resumed_states.append(dict(state))
+        return result
+
+    monkeypatch.setattr(DPCTWCheckpointStore, "save", interrupt_during_final_em)
+    with pytest.raises(RuntimeError, match="simulated Slurm termination"):
+        DPCTWBaseline(config, output_dir=output).fit(dataset)
+
+    resumed = DPCTWBaseline(config, output_dir=output).fit(dataset)
+    assert resumed_states[0]["phase"] == "final_em"
+    assert resumed_states[0]["em_next_iteration"] == 2
+    assert_same_dpctw_fit(resumed, expected)
+
+    completed = DPCTWCheckpointStore(output, checkpoint_signature(config, dataset)).load()
+    assert completed["state"]["phase"] == "final_complete"
+
+    import baselines.dpctw.em as cpu_em
+
+    def reject_repeated_em(*args, **kwargs):
+        raise AssertionError("completed final EM was repeated")
+
+    monkeypatch.setattr(cpu_em, "expectation", reject_repeated_em)
+    restarted_completed = DPCTWBaseline(config, output_dir=output).fit(dataset)
+    assert_same_dpctw_fit(restarted_completed, expected)
 
 
 @pytest.mark.cuda

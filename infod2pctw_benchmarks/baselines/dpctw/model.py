@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import time
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -36,6 +36,8 @@ class DPCCAModel:
     def fit(
         self, pairs: list[tuple[np.ndarray, np.ndarray]], max_iterations: int = 20,
         tolerance: float = 1e-4, warm_start: bool = False,
+        start_iteration: int = 0, initial_history: list[float] | None = None,
+        checkpoint_callback: Callable[[int, Any, list[float], bool], None] | None = None,
     ) -> "DPCCAModel":
         if self.device == "cuda":
             from .cuda_em import fit_em as fit_em_cuda
@@ -44,14 +46,27 @@ class DPCCAModel:
                 max_iterations=max_iterations, tolerance=tolerance, seed=self.seed,
                 initial_parameters=self.parameters if warm_start else None,
                 backend=self.backend,
+                start_iteration=start_iteration, initial_history=initial_history,
+                checkpoint_callback=checkpoint_callback,
             )
         else:
             self.parameters, self.history = fit_em(
                 pairs, self.shared_dim, self.x_private_dim, self.y_private_dim,
                 max_iterations=max_iterations, tolerance=tolerance, seed=self.seed,
                 initial_parameters=self.parameters if warm_start else None,
+                start_iteration=start_iteration, initial_history=initial_history,
+                checkpoint_callback=checkpoint_callback,
             )
         return self
+
+    def load_state_dict(self, values: dict[str, np.ndarray]) -> None:
+        if self.device == "cuda":
+            from .cuda_em import DPCCAParameters as CudaDPCCAParameters
+            self.parameters = CudaDPCCAParameters(**values).on(self.backend)
+        else:
+            self.parameters = DPCCAParameters(**{
+                name: np.asarray(value) for name, value in values.items()
+            })
 
     def smooth_joint(self, x: np.ndarray, y: np.ndarray) -> RTSResult:
         if self.parameters is None:
@@ -120,17 +135,50 @@ class DPCCAModel:
 
 
 class DPCTWBaseline:
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any], output_dir: str | Path | None = None):
         self.config = config
+        self.output_dir = Path(output_dir) if output_dir is not None else None
         self.model: DPCCAModel | None = None
         self.alignment = None
         self.training_runtime_seconds = 0.0
 
     def fit(self, dataset: BenchmarkDataset) -> "DPCTWBaseline":
         from .alignment import alternating_dpctw
+        from .checkpoint import DPCTWCheckpointStore, checkpoint_signature
+
+        checkpoint_store = (
+            DPCTWCheckpointStore(
+                self.output_dir, checkpoint_signature(self.config, dataset)
+            )
+            if self.output_dir is not None else None
+        )
+        resume = checkpoint_store.load() if checkpoint_store is not None else None
+        accumulated_runtime = (
+            float(resume["state"].get("training_runtime_seconds", 0.0))
+            if resume is not None else 0.0
+        )
         started = time.perf_counter()
-        self.model, self.alignment = alternating_dpctw(dataset, self.config)
-        self.training_runtime_seconds = time.perf_counter() - started
+
+        def save_checkpoint(state, parameters, paths):
+            if checkpoint_store is None:
+                return
+            state = dict(state)
+            state["training_runtime_seconds"] = (
+                accumulated_runtime + time.perf_counter() - started
+            )
+            parameter_values = {}
+            for name, value in vars(parameters).items():
+                if hasattr(value, "detach"):
+                    value = value.detach().cpu().numpy()
+                parameter_values[name] = np.asarray(value)
+            checkpoint_store.save(state, parameter_values, paths)
+
+        self.model, self.alignment = alternating_dpctw(
+            dataset, self.config, resume=resume, checkpoint_callback=save_checkpoint,
+        )
+        self.training_runtime_seconds = (
+            accumulated_runtime + time.perf_counter() - started
+        )
         return self
 
     def transform(self, dataset: BenchmarkDataset) -> BenchmarkResult:

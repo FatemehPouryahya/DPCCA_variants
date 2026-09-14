@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -114,7 +114,10 @@ class AlignmentResult:
     y_shared: np.ndarray | None = None
 
 
-def alternating_dpctw(dataset: BenchmarkDataset, config: dict[str, Any]):
+def alternating_dpctw(
+    dataset: BenchmarkDataset, config: dict[str, Any], resume: dict[str, Any] | None = None,
+    checkpoint_callback: Callable[[dict[str, Any], Any, list[np.ndarray]], None] | None = None,
+):
     from .model import DPCCAModel
 
     latent = config["latent"]
@@ -125,7 +128,6 @@ def alternating_dpctw(dataset: BenchmarkDataset, config: dict[str, Any]):
         raise ValueError("DPCTW device must be 'cpu' or 'cuda'")
     ds = int(latent["shared_dim"])
     compact: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
-    local_paths: list[np.ndarray] = []
     for batch_index in range(dataset.shape[0]):
         indices = np.flatnonzero(dataset.mask[batch_index])
         if len(indices) < 2:
@@ -133,25 +135,84 @@ def alternating_dpctw(dataset: BenchmarkDataset, config: dict[str, Any]):
         x = dataset.x[batch_index, indices]
         y = dataset.y[batch_index, indices]
         compact.append((x, y, indices))
-        x_initial, y_initial = observation_initialization(x, y, ds, device=device)
-        path, _ = dtw_path(
-            squared_distance_matrix(x_initial, y_initial, device=device), alignment_config.get("band_radius")
-        )
-        local_paths.append(path)
 
     model = DPCCAModel(
         ds, int(latent["x_private_dim"]), int(latent["y_private_dim"]),
         int(config.get("seed", 0)), device=device,
     )
-    history: list[dict[str, Any]] = []
-    previous_objective: float | None = None
+    if resume is not None:
+        local_paths = [np.asarray(path, dtype=int) for path in resume["paths"]]
+        if len(local_paths) != len(compact):
+            raise ValueError("DPCTW checkpoint path count does not match the dataset")
+        for path, (x, y, _) in zip(local_paths, compact):
+            validate_path(path, len(x), len(y))
+        model.load_state_dict(resume["parameters"])
+        state = resume["state"]
+        history = list(state.get("alignment_history", []))
+        previous_objective = state.get("previous_objective")
+        last_outer_converged = bool(state.get("outer_converged", False))
+        phase = str(state["phase"])
+    else:
+        local_paths = []
+        for x, y, _ in compact:
+            x_initial, y_initial = observation_initialization(x, y, ds, device=device)
+            path, _ = dtw_path(
+                squared_distance_matrix(x_initial, y_initial, device=device),
+                alignment_config.get("band_radius"),
+            )
+            local_paths.append(path)
+        state = {}
+        history = []
+        previous_objective = None
+        last_outer_converged = False
+        phase = "outer_start"
+
     max_alignment_iterations = int(alignment_config.get("max_iterations", 5))
-    for iteration in range(max_alignment_iterations):
+    if phase == "outer_em":
+        outer_start = int(state["outer_iteration"])
+        proceed_to_final = False
+    elif phase == "outer_complete":
+        outer_start = int(state["outer_next_iteration"])
+        proceed_to_final = bool(state.get("outer_converged", False)) or outer_start >= max_alignment_iterations
+    elif phase in ("final_em", "final_complete"):
+        outer_start = max_alignment_iterations
+        proceed_to_final = True
+    elif phase == "outer_start":
+        outer_start = 0
+        proceed_to_final = False
+    else:
+        raise ValueError(f"unknown DPCTW checkpoint phase: {phase}")
+
+    for iteration in range(outer_start, max_alignment_iterations) if not proceed_to_final else ():
         aligned = [(x[path[:, 0]], y[path[:, 1]]) for (x, y, _), path in zip(compact, local_paths)]
-        model.fit(
-            aligned, max_iterations=int(dpcca_config.get("max_em_iterations", 20)),
-            tolerance=float(dpcca_config.get("tolerance", 1e-4)), warm_start=iteration > 0,
-        )
+        resume_em = phase == "outer_em" and iteration == outer_start
+        em_start = int(state.get("em_next_iteration", 0)) if resume_em else 0
+        em_history = list(state.get("em_history", [])) if resume_em else []
+        em_complete = bool(state.get("em_complete", False)) if resume_em else False
+
+        def save_outer_em(next_iteration, parameters, current_history, complete):
+            if checkpoint_callback is not None:
+                checkpoint_callback({
+                    "phase": "outer_em",
+                    "outer_iteration": iteration,
+                    "em_next_iteration": next_iteration,
+                    "em_complete": bool(complete),
+                    "em_history": list(current_history),
+                    "alignment_history": list(history),
+                    "previous_objective": previous_objective,
+                    "outer_converged": False,
+                }, parameters, local_paths)
+
+        if em_complete:
+            model.history = em_history
+        else:
+            model.fit(
+                aligned, max_iterations=int(dpcca_config.get("max_em_iterations", 20)),
+                tolerance=float(dpcca_config.get("tolerance", 1e-4)),
+                warm_start=resume_em or iteration > 0,
+                start_iteration=em_start, initial_history=em_history,
+                checkpoint_callback=save_outer_em,
+            )
         new_paths: list[np.ndarray] = []
         objective = 0.0
         for x, y, _ in compact:
@@ -171,15 +232,71 @@ def alternating_dpctw(dataset: BenchmarkDataset, config: dict[str, Any]):
             "em_final_log_likelihood": float(model.history[-1]) if model.history else None,
         })
         local_paths = new_paths
-        if previous_objective is not None and relative is not None and relative < float(alignment_config.get("tolerance", 1e-4)) and not changed:
-            break
+        converged = (
+            previous_objective is not None and relative is not None
+            and relative < float(alignment_config.get("tolerance", 1e-4)) and not changed
+        )
+        last_outer_converged = bool(converged)
+        if checkpoint_callback is not None:
+            checkpoint_callback({
+                "phase": "outer_complete",
+                "outer_iteration": iteration,
+                "outer_next_iteration": iteration + 1,
+                "outer_converged": bool(converged),
+                "em_next_iteration": len(model.history),
+                "em_complete": True,
+                "em_history": list(model.history),
+                "alignment_history": list(history),
+                "previous_objective": float(objective),
+            }, model.parameters, local_paths)
+        phase = "outer_start"
+        state = {}
         previous_objective = objective
+        if converged:
+            break
 
     final_aligned = [(x[path[:, 0]], y[path[:, 1]]) for (x, y, _), path in zip(compact, local_paths)]
-    model.fit(
-        final_aligned, max_iterations=int(dpcca_config.get("max_em_iterations", 20)),
-        tolerance=float(dpcca_config.get("tolerance", 1e-4)), warm_start=True,
-    )
+    if phase == "final_complete":
+        model.history = list(state.get("em_history", []))
+    else:
+        resume_final_em = phase == "final_em"
+        em_start = int(state.get("em_next_iteration", 0)) if resume_final_em else 0
+        em_history = list(state.get("em_history", [])) if resume_final_em else []
+        em_complete = bool(state.get("em_complete", False)) if resume_final_em else False
+
+        def save_final_em(next_iteration, parameters, current_history, complete):
+            if checkpoint_callback is not None:
+                checkpoint_callback({
+                    "phase": "final_em",
+                    "outer_iteration": len(history),
+                    "em_next_iteration": next_iteration,
+                    "em_complete": bool(complete),
+                    "em_history": list(current_history),
+                    "alignment_history": list(history),
+                    "previous_objective": previous_objective,
+                    "outer_converged": last_outer_converged,
+                }, parameters, local_paths)
+
+        if em_complete:
+            model.history = em_history
+        else:
+            model.fit(
+                final_aligned, max_iterations=int(dpcca_config.get("max_em_iterations", 20)),
+                tolerance=float(dpcca_config.get("tolerance", 1e-4)), warm_start=True,
+                start_iteration=em_start, initial_history=em_history,
+                checkpoint_callback=save_final_em,
+            )
+        if checkpoint_callback is not None:
+            checkpoint_callback({
+                "phase": "final_complete",
+                "outer_iteration": len(history),
+                "em_next_iteration": len(model.history),
+                "em_complete": True,
+                "em_history": list(model.history),
+                "alignment_history": list(history),
+                "previous_objective": previous_objective,
+                "outer_converged": last_outer_converged,
+            }, model.parameters, local_paths)
     global_paths = [np.column_stack([indices[path[:, 0]], indices[path[:, 1]]])
                     for (_, _, indices), path in zip(compact, local_paths)]
     return model, AlignmentResult(

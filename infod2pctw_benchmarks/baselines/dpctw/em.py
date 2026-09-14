@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Callable, Iterable
 
 import numpy as np
 
@@ -222,10 +222,12 @@ def fit_em(
     pairs: list[tuple[np.ndarray, np.ndarray]], shared_dim: int, x_private_dim: int,
     y_private_dim: int, max_iterations: int = 20, tolerance: float = 1e-4,
     seed: int = 0, initial_parameters: DPCCAParameters | None = None,
+    start_iteration: int = 0, initial_history: list[float] | None = None,
+    checkpoint_callback: Callable[[int, DPCCAParameters, list[float], bool], None] | None = None,
 ) -> tuple[DPCCAParameters, list[float]]:
     parameters = initial_parameters or initialize_parameters(pairs, shared_dim, x_private_dim, y_private_dim, seed)
-    history: list[float] = []
-    for _ in range(max_iterations):
+    history = list(initial_history or [])
+    for iteration in range(start_iteration, max_iterations):
         results = [expectation(parameters, x, y) for x, y in pairs]
         objective = float(sum(result.log_likelihood for result in results))
         if not np.isfinite(objective):
@@ -234,6 +236,12 @@ def fit_em(
         if len(history) > 1:
             relative = abs(history[-1] - history[-2]) / max(1.0, abs(history[-2]))
             if relative < tolerance:
+                if checkpoint_callback is not None:
+                    checkpoint_callback(iteration + 1, parameters, history, True)
                 break
         parameters = maximization(parameters, pairs, results)
+        if checkpoint_callback is not None:
+            checkpoint_callback(
+                iteration + 1, parameters, history, iteration + 1 >= max_iterations
+            )
     return parameters, history
