@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #SBATCH --account=def-rozeske
-#SBATCH --cpus-per-task=1
-#SBATCH --mem=4G
-#SBATCH --time=5-00:00
+#SBATCH --gpus-per-node=h100:1
+#SBATCH --cpus-per-task=4
+#SBATCH --time=00:30:00
 #SBATCH --nodes=1
 #SBATCH --job-name=dpcca_bench_controller
 #SBATCH --output=dpcca_bench_controller_%j.log
