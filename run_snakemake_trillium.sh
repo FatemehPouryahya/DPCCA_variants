@@ -22,7 +22,9 @@ PROJECT_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
 module load python/3.11
 
 
-source ~/envs/snakemake_cc/bin/activate
+# source ~/envs/snakemake_cc/bin/activate
+source ~/envs/dpcca_baselines/bin/activate
+
 
 export PYTHONNOUSERSITE=1
 cd "$PROJECT_DIR"
