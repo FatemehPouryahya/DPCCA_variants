@@ -33,11 +33,20 @@ cd "$PROJECT_DIR"
 # environment is used by the rule jobs on the compute nodes.
 python -c 'import snakemake, snakemake_executor_plugin_slurm, torch, pyro, scipy, sklearn, yaml'
 
+
 snakemake \
-  --snakefile "$PROJECT_DIR/Snakefile" \
+  --snakefile Snakefile \
   --directory "$PROJECT_DIR" \
-  --executor slurm \
-  --jobs 9 \
-  --default-resources \
+  --cores "$SLURM_CPUS_PER_TASK" \
   --rerun-incomplete \
   --printshellcmds
+
+
+# snakemake \
+#   --snakefile Snakefile \
+#   --directory . \
+#   --executor slurm \
+#   --jobs 1 \
+#   --set-resources fit_infodpcca:tasks_per_gpu=0 \
+#   --rerun-incomplete \
+#   --printshellcmds
