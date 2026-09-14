@@ -42,6 +42,39 @@ def test_d2pcca_adapter_construction_and_latent_extraction():
     assert np.all(np.isfinite(result.shared_latent))
 
 
+def test_d2pcca_resumes_latest_complete_checkpoint(tmp_path):
+    config = d2_config()
+    config["d2pcca"].update({"epochs": 3, "checkpoint_every_epochs": 1})
+    baseline = D2PCCABaseline(config, output_dir=tmp_path)
+    save_checkpoint = baseline._save_checkpoint
+
+    def interrupt_after_first_epoch(completed_epoch, runtime_seconds):
+        save_checkpoint(completed_epoch, runtime_seconds)
+        if completed_epoch == 1:
+            raise RuntimeError("simulated interruption")
+
+    baseline._save_checkpoint = interrupt_after_first_epoch
+    with pytest.raises(RuntimeError, match="simulated interruption"):
+        baseline.fit(dataset())
+
+    checkpoint_dir = tmp_path / "checkpoints" / "d2pcca"
+    first_state = json.loads((checkpoint_dir / "state_epoch_000001.json").read_text())
+    (checkpoint_dir / "state_epoch_999999.json").write_text(json.dumps({
+        "completed_epoch": 999999,
+        "model_file": "missing_model.pt",
+        "optimizer_file": "missing_optimizer.pt",
+    }))
+
+    resumed = D2PCCABaseline(config, output_dir=tmp_path).fit(dataset())
+    assert len(resumed.history["elbo_loss_per_valid_timestamp"]) == 3
+    final_state = json.loads((checkpoint_dir / "state_epoch_000003.json").read_text())
+    assert final_state["completed_epoch"] == 3
+    assert final_state["next_epoch"] == 4
+    assert final_state["training_runtime_seconds"] >= first_state["training_runtime_seconds"]
+    assert (checkpoint_dir / "model_epoch_000003.pt").is_file()
+    assert (checkpoint_dir / "optimizer_epoch_000003.pt").is_file()
+
+
 def test_infodpcca_adapter_construction_and_latent_extraction():
     baseline = InfoDPCCABaseline(info_config()).fit(dataset())
     result = baseline.transform(dataset())

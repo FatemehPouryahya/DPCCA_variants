@@ -24,7 +24,7 @@ def run(model_name: str, data_path: str | Path, config_path: str | Path, output_
     output = Path(output_dir) if output_dir else ROOT / "results" / dataset.name / model_name
     if model_name == "d2pcca":
         from baselines.d2pcca import D2PCCABaseline, AUTHOR_REPOSITORY
-        baseline = D2PCCABaseline(config)
+        baseline = D2PCCABaseline(config, output_dir=output)
         third_party = ROOT / "third_party" / "D2PCCA"
         source = f"{AUTHOR_REPOSITORY}:D2PCCA.py"
     elif model_name == "infodpcca":

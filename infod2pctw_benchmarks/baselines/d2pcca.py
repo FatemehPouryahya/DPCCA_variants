@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import random
 import time
@@ -31,8 +32,9 @@ def _load_author_module():
 class D2PCCABaseline:
     """Common benchmark API without changing the vendored model mathematics."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any], output_dir: str | Path | None = None):
         self.config = config
+        self.output_dir = Path(output_dir) if output_dir is not None else None
         self.model = None
         self.optimizer = None
         self.svi = None
@@ -86,6 +88,100 @@ class D2PCCABaseline:
         })
         self.svi = SVI(self.model.model, self.model.guide, self.optimizer, Trace_ELBO())
 
+    def _checkpoint_directory(self) -> Path | None:
+        if self.output_dir is None:
+            return None
+        return self.output_dir / "checkpoints" / "d2pcca"
+
+    def _save_checkpoint(self, completed_epoch: int, runtime_seconds: float) -> None:
+        checkpoint_dir = self._checkpoint_directory()
+        if checkpoint_dir is None:
+            return
+        import torch
+
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        suffix = f"{completed_epoch:06d}"
+        model_path = checkpoint_dir / f"model_epoch_{suffix}.pt"
+        optimizer_path = checkpoint_dir / f"optimizer_epoch_{suffix}.pt"
+        state_path = checkpoint_dir / f"state_epoch_{suffix}.json"
+        model_temporary = checkpoint_dir / f".model_epoch_{suffix}.tmp"
+        optimizer_temporary = checkpoint_dir / f".optimizer_epoch_{suffix}.tmp"
+        state_temporary = checkpoint_dir / f".state_epoch_{suffix}.tmp"
+
+        torch.save(self.model.state_dict(), model_temporary)
+        self.optimizer.save(str(optimizer_temporary))
+        model_temporary.replace(model_path)
+        optimizer_temporary.replace(optimizer_path)
+        state = {
+            "completed_epoch": int(completed_epoch),
+            "next_epoch": int(completed_epoch) + 1,
+            "model_file": model_path.name,
+            "optimizer_file": optimizer_path.name,
+            "history": self.history,
+            "training_runtime_seconds": float(runtime_seconds),
+        }
+        state_temporary.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
+        state_temporary.replace(state_path)
+
+    def _load_latest_checkpoint(self) -> int:
+        checkpoint_dir = self._checkpoint_directory()
+        if checkpoint_dir is None or not checkpoint_dir.exists():
+            return 0
+
+        candidates: list[tuple[int, Path, dict[str, Any]]] = []
+        for state_path in checkpoint_dir.glob("state_epoch_*.json"):
+            try:
+                state = json.loads(state_path.read_text())
+                completed_epoch = int(state["completed_epoch"])
+                suffix = state_path.stem.removeprefix("state_epoch_")
+                history = state["history"]["elbo_loss_per_valid_timestamp"]
+                runtime_seconds = float(state["training_runtime_seconds"])
+                if (
+                    completed_epoch < 1
+                    or completed_epoch != int(suffix)
+                    or int(state["next_epoch"]) != completed_epoch + 1
+                    or not isinstance(history, list)
+                    or len(history) != completed_epoch
+                    or runtime_seconds < 0.0
+                    or state["model_file"] != f"model_epoch_{suffix}.pt"
+                    or state["optimizer_file"] != f"optimizer_epoch_{suffix}.pt"
+                ):
+                    continue
+                model_path = checkpoint_dir / state["model_file"]
+                optimizer_path = checkpoint_dir / state["optimizer_file"]
+                if not model_path.is_file() or not optimizer_path.is_file():
+                    continue
+            except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+                continue
+            candidates.append((completed_epoch, state_path, state))
+
+        if not candidates:
+            return 0
+
+        import torch
+
+        for completed_epoch, _, state in sorted(candidates, reverse=True):
+            model_path = checkpoint_dir / state["model_file"]
+            optimizer_path = checkpoint_dir / state["optimizer_file"]
+            try:
+                model_state = torch.load(model_path, map_location=self.model.device)
+                self.model.load_state_dict(model_state)
+                self.optimizer.load(str(optimizer_path))
+            except (OSError, RuntimeError, ValueError, EOFError):
+                continue
+            history = state.get("history")
+            if isinstance(history, dict):
+                self.history = {
+                    "elbo_loss_per_valid_timestamp": list(
+                        history.get("elbo_loss_per_valid_timestamp", [])
+                    )
+                }
+            self.training_runtime_seconds = float(
+                state.get("training_runtime_seconds", 0.0)
+            )
+            return completed_epoch
+        return 0
+
     def fit(self, dataset: BenchmarkDataset) -> "D2PCCABaseline":
         if self.model is None:
             self._build(dataset)
@@ -98,8 +194,13 @@ class D2PCCABaseline:
         epochs = int(method.get("epochs", 1))
         annealing_epochs = int(method.get("annealing_epochs", 100))
         minimum = float(method.get("minimum_annealing_factor", 0.01))
+        checkpoint_every = int(method.get("checkpoint_every_epochs", 5))
+        if checkpoint_every < 1:
+            raise ValueError("D²PCCA checkpoint_every_epochs must be positive")
+        start_epoch = self._load_latest_checkpoint()
         started = time.perf_counter()
-        for epoch in range(epochs):
+        accumulated_runtime = self.training_runtime_seconds
+        for epoch in range(start_epoch, epochs):
             factor = minimum + (1.0 - minimum) * min(1.0, (epoch + 1) / max(1, annealing_epochs))
             total_loss = 0.0
             total_time = 0
@@ -112,7 +213,15 @@ class D2PCCABaseline:
             if not np.isfinite(value):
                 raise FloatingPointError("D²PCCA author objective became non-finite")
             self.history["elbo_loss_per_valid_timestamp"].append(value)
-        self.training_runtime_seconds = time.perf_counter() - started
+            completed_epoch = epoch + 1
+            if completed_epoch % checkpoint_every == 0 or completed_epoch == epochs:
+                self._save_checkpoint(
+                    completed_epoch,
+                    accumulated_runtime + time.perf_counter() - started,
+                )
+        self.training_runtime_seconds = (
+            accumulated_runtime + time.perf_counter() - started
+        )
         return self
 
     def _infer_segment(self, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, ...]:
