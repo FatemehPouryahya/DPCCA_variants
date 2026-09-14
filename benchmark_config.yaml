@@ -6,7 +6,7 @@ execution_environment: hpc #local  # override with hpc on the cluster
 # Edit only this block to choose the workflow scope.
 run:
   datasets: [miniscope]
-  models: [infodpcca]
+  models: [d2pcca]
   evaluate: false
   build_manuscript_table: false
 
