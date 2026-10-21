@@ -1,17 +1,15 @@
 seed: 0
 
 latent:
-  shared_dim: 8
-  x_private_dim: 4
-  y_private_dim: 4
+  shared_dim: 3
+  x_private_dim: 3
+  y_private_dim: 3
 
 data:
   standardize_x: true
   standardize_y: true
 
 d2pcca:
-  # Refuse an accidental CPU fallback for the HPC benchmark.
-  device: cuda
   epochs: 200
 
   emission_dims: [20, 20]
@@ -41,38 +39,3 @@ output:
   save_latents: true
   save_reconstructions: true
   save_history: true
-  
-# seed: 0
-
-# latent:
-#   shared_dim: 8
-#   x_private_dim: 4
-#   y_private_dim: 4
-
-# data:
-#   standardize_x: true
-#   standardize_y: true
-
-# d2pcca:
-#   # Manuscript schedule: finish the 100-epoch KL ramp, then train 100 epochs at full weight.
-#   epochs: 200
-#   emission_dims: [20, 20]
-#   transition_dims: [5, 10, 10]
-#   rnn_dim: 50
-#   rnn_layers: 1
-#   rnn_dropout_rate: 0.0
-#   num_iafs: 0
-#   iaf_dim: 50
-#   annealing_epochs: 100
-#   minimum_annealing_factor: 0.01
-#   optimizer:
-#     lr: 0.0003
-#     betas: [0.96, 0.999]
-#     clip_norm: 10.0
-#     lrd: 0.99996
-#     weight_decay: 2.0
-
-# output:
-#   save_latents: true
-#   save_reconstructions: true
-#   save_history: true
