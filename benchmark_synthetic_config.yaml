@@ -1,0 +1,123 @@
+schema_version: infod2pctw-manuscript-benchmark-v1
+
+training_configs_approved: true #false
+execution_environment: hpc #local  # override with hpc on the cluster
+
+# Edit only this block to choose the workflow scope.
+run:
+  datasets: [synth_lin_low]
+  models: [d2pcca]
+  evaluate: false
+  build_manuscript_table: false
+
+paths:
+  benchmark_root: infod2pctw_benchmarks
+  output_root: results
+  local_python: python
+  hpc_python: python
+
+hpc:
+  slurm_account: def-rozeske
+  gpu_model: h100
+
+datasets:
+  synth_lin_low:
+    identity: noise_std-2-25_linear
+    modality_evidence: synthetic data with low noise ~20 dB with identity alignment (no time warping) with linear observation model 
+    bundle:
+      local: data/AgNeuro_bundle/Cohorts/noise_std-2-25/infod2pctw/shared_private_linear/bundles/synthetic
+      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/noise_std-2-25/infod2pctw/shared_private_linear/bundles/synthetic
+
+  synth_nonlin_low:
+    identity: noise_std-2-25_nonlinear
+    modality_evidence: synthetic data with low noise ~20 dB with identity alignment (no time warping) with nonlinear observation model 
+    bundle:
+      local: data/AgNeuro_bundle/Cohorts/noise_std-2-25/infod2pctw/shared_private_nonlinear/bundles/synthetic
+      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/noise_std-2-25/infod2pctw/shared_private_nonlinear/bundles/synthetic
+
+  synth_lin_low_tw:
+    identity: noise_std-2-25_linear_tw
+    modality_evidence: synthetic data with low noise ~20 dB with time warping alignment with linear observation model 
+    bundle:
+      local: data/AgNeuro_bundle/Cohorts/noise_std-2-25_tw/infod2pctw/shared_private_linear/bundles/synthetic
+      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/noise_std-2-25_tw/infod2pctw/shared_private_linear/bundles/synthetic
+
+  synth_nonlin_low_tw:
+    identity: noise_std-2-25_nonlinear_tw
+    modality_evidence: synthetic data with low noise ~20 dB with time warping alignment with nonlinear observation model 
+    bundle:
+      local: data/AgNeuro_bundle/Cohorts/noise_std-2-25_tw/infod2pctw/shared_private_nonlinear/bundles/synthetic
+      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/noise_std-2-25_tw/infod2pctw/shared_private_nonlinear/bundles/synthetic      
+  
+  synth_lin_high:
+    identity: noise_std-0-05_linear
+    modality_evidence: synthetic data with high noise ~50 dB with identity alignment (no time warping) with linear observation model 
+    bundle:
+      local: data/AgNeuro_bundle/Cohorts/noise_std-0-05/infod2pctw/shared_private_linear/bundles/synthetic
+      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/noise_std-0-05/infod2pctw/shared_private_linear/bundles/synthetic
+  
+  synth_nonlin_high:
+    identity: noise_std-0-05_nonlinear
+    modality_evidence: synthetic data with high noise ~50 dB with identity alignment (no time warping) with nonlinear observation model 
+    bundle:
+      local: data/AgNeuro_bundle/Cohorts/noise_std-0-05/infod2pctw/shared_private_nonlinear/bundles/synthetic
+      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/noise_std-0-05/infod2pctw/shared_private_nonlinear/bundles/synthetic
+
+models:
+  d2pcca:
+    kind: baseline
+    config: infod2pctw_benchmarks/configs/d2pcca.yaml
+  infodpcca:
+    kind: baseline
+    config: infod2pctw_benchmarks/configs/infodpcca.yaml
+  dpctw:
+    kind: baseline
+    config: infod2pctw_benchmarks/configs/dpctw.yaml
+  infod2pctw:
+    kind: reference
+    config: infod2pctw/configs/infod2pctw_config.yaml
+    recorded_git_commit: ec04b4191ee517d9e105f0a7a10dc7f1465786fa
+    retrain: false
+
+
+proposed_training:
+  d2pcca:
+    epochs: 301
+    annealing_epochs: 100
+    minimum_annealing_factor: 0.01
+  infodpcca:
+    stage_I_epochs: 1000
+    stage_II_epochs: 1500
+    alpha: 1.0
+    beta: 0.1
+  dpctw:
+    max_em_iterations: 50
+    em_tolerance: 0.0001
+    max_alignment_iterations: 20
+    alignment_tolerance: 0.0001
+    band_radius_frames: 100
+  infod2pctw:
+    stage_I_epochs: 80
+    alignment_warmup_epochs: 20
+    alignment_update_every_epochs: 5
+    max_alignment_updates: 12
+    convergence_patience: 3
+    stage_II_epochs: 50
+    band_radius_fraction: 0.02
+
+resources:
+  d2pcca:
+    threads: 8
+    gpu: 1
+    mem_mb: 65536
+    runtime: 2880
+  infodpcca:
+    threads: 8
+    gpu: 1
+    mem_mb: 98304
+    runtime: 4320
+  dpctw:
+    threads: 16
+    gpu: 0
+    mem_mb: 262144
+    runtime: 5760

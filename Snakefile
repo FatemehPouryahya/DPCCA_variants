@@ -1,4 +1,4 @@
-configfile: "benchmark_config.yaml"
+configfile: "benchmark_synthetic_config.yaml"
 
 import csv
 import json
@@ -17,7 +17,7 @@ from snakemake.exceptions import WorkflowError
 
 RUN = config.get("run")
 if not isinstance(RUN, dict):
-    raise WorkflowError("benchmark_config.yaml must define a 'run' mapping")
+    raise WorkflowError("benchmark_synthetic_config.yaml must define a 'run' mapping")
 
 AVAILABLE_DATASETS = tuple(config.get("datasets", {}))
 AVAILABLE_BASELINES = tuple(

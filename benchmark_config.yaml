@@ -30,7 +30,6 @@ datasets:
     infod2pctw_result:
       local: "temp/infod2pctwc_projects copy/projects/2026_09_12-22_51_03"
       hpc: /scratch/fpour100/DPCCA_variants/data/projects/2026_09_12-22_51_03
-
     infod2pctw_evaluation:
       local: "temp/infod2pctwc_projects copy/projects/2026_09_12-22_51_03/benchmark_export"
       hpc: /scratch/fpour100/DPCCA_variants/data/projects/2026_09_12-22_51_03/benchmark_export
