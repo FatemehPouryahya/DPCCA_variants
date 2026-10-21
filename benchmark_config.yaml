@@ -5,8 +5,8 @@ execution_environment: hpc #local  # override with hpc on the cluster
 
 # Edit only this block to choose the workflow scope.
 run:
-  datasets: [miniscope]
-  models: [dpctw]
+  datasets: [fp]
+  models: [d2pcca]
   evaluate: false
   build_manuscript_table: false
 
@@ -26,40 +26,40 @@ datasets:
     modality_evidence: released LFP clock and spectral-feature interpolation
     bundle:
       local: data/AgNeuro_bundle/Cohorts/esc/infod2pctw/latent_state/bundles/esc
-      hpc: /scratch/fpour100/infod2pctw/data/AgNeuro_bundle/Cohorts/esc/infod2pctw/latent_state/bundles/esc
+      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/esc/infod2pctw/latent_state/bundles/esc
     infod2pctw_result:
       local: "temp/infod2pctwc_projects copy/projects/2026_09_12-22_51_03"
-      hpc: /scratch/fpour100/infod2pctw/data/projects/2026_09_12-22_51_03
+      hpc: /scratch/fpour100/DPCCA_variants/data/projects/2026_09_12-22_51_03
 
     infod2pctw_evaluation:
       local: "temp/infod2pctwc_projects copy/projects/2026_09_12-22_51_03/benchmark_export"
-      hpc: /scratch/fpour100/infod2pctw/data/projects/2026_09_12-22_51_03/benchmark_export
+      hpc: /scratch/fpour100/DPCCA_variants/data/projects/2026_09_12-22_51_03/benchmark_export
 
   fp:
     identity: fp
     modality_evidence: continuous processed fiber-photometry signal
     bundle:
       local: data/AgNeuro_bundle/Cohorts/fp/infod2pctw/latent_state/bundles/fp
-      hpc: /scratch/fpour100/infod2pctw/data/AgNeuro_bundle/Cohorts/fp/infod2pctw/latent_state/bundles/fp
+      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/fp/infod2pctw/latent_state/bundles/fp
     infod2pctw_result:
       local: "temp/infod2pctwc_projects copy/projects/2026_09_12-18_23_13"
-      hpc: /scratch/fpour100/infod2pctw/data/projects/2026_09_12-18_23_13
+      hpc: /scratch/fpour100/DPCCA_variants/data/projects/2026_09_12-18_23_13
     infod2pctw_evaluation:
       local: "temp/infod2pctwc_projects copy/projects/2026_09_12-18_23_13/benchmark_export"
-      hpc: /scratch/fpour100/infod2pctw/data/projects/2026_09_12-18_23_13/benchmark_export
+      hpc: /scratch/fpour100/DPCCA_variants/data/projects/2026_09_12-18_23_13/benchmark_export
 
   miniscope:
     identity: dms/2JH3_NoPart
     modality_evidence: processed calcium observations on a miniscope acquisition clock
     bundle:
       local: data/AgNeuro_bundle/Cohorts/dms/infod2pctw/latent_state/bundles/dms/2JH3_NoPart
-      hpc: /scratch/fpour100/infod2pctw/data/AgNeuro_bundle/Cohorts/dms/infod2pctw/latent_state/bundles/dms/2JH3_NoPart
+      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/dms/infod2pctw/latent_state/bundles/dms/2JH3_NoPart
     infod2pctw_result:
       local: "temp/infod2pctwc_projects copy/projects/2026_09_13-04_20_32"
-      hpc: /scratch/fpour100/infod2pctw/data/projects/2026_09_13-04_20_32
+      hpc: /scratch/fpour100/DPCCA_variants/data/projects/2026_09_13-04_20_32
     infod2pctw_evaluation:
       local: "temp/infod2pctwc_projects copy/projects/2026_09_13-04_20_32/benchmark_export"
-      hpc: /scratch/fpour100/infod2pctw/data/projects/2026_09_13-04_20_32/benchmark_export
+      hpc: /scratch/fpour100/DPCCA_variants/data/projects/2026_09_13-04_20_32/benchmark_export
 
 models:
   d2pcca:
