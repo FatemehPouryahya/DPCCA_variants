@@ -15,7 +15,7 @@ import numpy as np
 from data.agneuro_adapter import BenchmarkDataset
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 PARAMETER_NAMES = (
     "shared_transition",
     "x_private_transition",
@@ -34,14 +34,28 @@ PARAMETER_NAMES = (
 )
 
 
-def checkpoint_signature(config: dict[str, Any], dataset: BenchmarkDataset) -> str:
+def checkpoint_signature(
+    config: dict[str, Any], dataset: BenchmarkDataset,
+    validation_dataset: BenchmarkDataset | None = None,
+) -> str:
     """Identify checkpoint state that is safe to use for this run."""
+    def partition(value: BenchmarkDataset) -> dict[str, Any]:
+        return {
+            "x_shape": value.x.shape,
+            "y_shape": value.y.shape,
+            "sequence_ids": value.sequence_ids,
+            "mask_sha256": hashlib.sha256(value.mask.tobytes()).hexdigest(),
+            "preprocessing": (
+                value.preprocessing_stats.to_jsonable()
+                if value.preprocessing_stats is not None else None
+            ),
+        }
+
     payload = {
+        "schema_version": "dpctw-training-protocol-v2",
         "config": config,
-        "x_shape": dataset.x.shape,
-        "y_shape": dataset.y.shape,
-        "sequence_ids": dataset.sequence_ids,
-        "mask_sha256": hashlib.sha256(dataset.mask.tobytes()).hexdigest(),
+        "training": partition(dataset),
+        "validation": partition(validation_dataset) if validation_dataset is not None else None,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
     return hashlib.sha256(encoded).hexdigest()
@@ -57,11 +71,18 @@ class DPCTWCheckpointStore:
 
     def load(self) -> dict[str, Any] | None:
         candidates = []
-        for path in (self.directory / "checkpoint_0.npz", self.directory / "checkpoint_1.npz"):
+        paths = (self.directory / "checkpoint_0.npz", self.directory / "checkpoint_1.npz")
+        existing = [path for path in paths if path.is_file()]
+        for path in paths:
             loaded = self._load_file(path)
             if loaded is not None:
                 candidates.append(loaded)
         if not candidates:
+            if existing:
+                raise RuntimeError(
+                    "DPCTW checkpoints are incomplete or use a different/legacy "
+                    "split-normalization protocol; use a new result directory or remove them"
+                )
             return None
         newest = max(candidates, key=lambda item: item["sequence"])
         self.sequence = int(newest["sequence"])

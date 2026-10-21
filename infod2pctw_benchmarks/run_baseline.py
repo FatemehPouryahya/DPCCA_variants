@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 from benchmark import build_provenance, load_config
-from data.agneuro_adapter import load_agneuro
+from data.agneuro_adapter import load_agneuro, predefined_trial_datasets
 
 
 ROOT = Path(__file__).resolve().parent
@@ -18,8 +18,15 @@ def run(model_name: str, data_path: str | Path, config_path: str | Path, output_
     config = load_config(config_path)
     raw = load_agneuro(data_path)
     data_config = config.get("data", {})
-    dataset = raw.standardized(
-        bool(data_config.get("standardize_x", True)), bool(data_config.get("standardize_y", True))
+    standardize_x = bool(data_config.get("standardize_x", True))
+    standardize_y = bool(data_config.get("standardize_y", True))
+    predefined = (
+        predefined_trial_datasets(raw, standardize_x, standardize_y)
+        if model_name in ("d2pcca", "infodpcca", "dpctw") else None
+    )
+    dataset = (
+        predefined.train if predefined is not None
+        else raw.standardized(standardize_x, standardize_y)
     )
     output = Path(output_dir) if output_dir else ROOT / "results" / dataset.name / model_name
     if model_name == "d2pcca":
@@ -40,8 +47,19 @@ def run(model_name: str, data_path: str | Path, config_path: str | Path, output_
     else:
         raise ValueError(f"unknown model: {model_name}")
 
-    baseline.fit(dataset)
-    result = baseline.transform(dataset)
+    if predefined is not None:
+        output.mkdir(parents=True, exist_ok=True)
+        (output / "trial_splits.json").write_text(
+            json.dumps(predefined.to_jsonable(), indent=2, sort_keys=True) + "\n"
+        )
+        (output / "preprocessing.json").write_text(
+            json.dumps(dataset.preprocessing_stats.to_jsonable(), indent=2, sort_keys=True) + "\n"
+        )
+        baseline.fit(dataset, validation_dataset=predefined.validation)
+        result, _ = baseline.evaluate_test(predefined.test, output)
+    else:
+        baseline.fit(dataset)
+        result = baseline.transform(dataset)
     provenance = build_provenance(
         dataset_metadata=dataset.metadata, benchmark_root=ROOT, third_party_root=third_party,
         source_implementation=source, seed=int(config.get("seed", 0)),
