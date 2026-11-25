@@ -1,7 +1,7 @@
 schema_version: infod2pctw-manuscript-benchmark-v1
 
 training_configs_approved: true #false
-execution_environment: hpc #local  # override with hpc on the cluster
+execution_environment: hpc # Set to local for a configured local workflow.
 
 # Edit only this block to choose the workflow scope.
 run:
@@ -17,7 +17,7 @@ paths:
   hpc_python: python
 
 hpc:
-  slurm_account: def-rozeske
+  slurm_account: YOUR_SLURM_ACCOUNT
   gpu_model: h100
 
 datasets:
@@ -25,40 +25,40 @@ datasets:
     identity: esc
     modality_evidence: released LFP clock and spectral-feature interpolation
     bundle:
-      local: data/AgNeuro_bundle/Cohorts/esc/infod2pctw/latent_state/bundles/esc
-      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/esc/infod2pctw/latent_state/bundles/esc
+      local: data/lfp/bundle
+      hpc: /path/to/benchmark/data/lfp/bundle
     infod2pctw_result:
-      local: "temp/infod2pctwc_projects copy/projects/2026_09_12-22_51_03"
-      hpc: /scratch/fpour100/DPCCA_variants/data/projects/2026_09_12-22_51_03
+      local: data/lfp/reference
+      hpc: /path/to/benchmark/data/lfp/reference
     infod2pctw_evaluation:
-      local: "temp/infod2pctwc_projects copy/projects/2026_09_12-22_51_03/benchmark_export"
-      hpc: /scratch/fpour100/DPCCA_variants/data/projects/2026_09_12-22_51_03/benchmark_export
+      local: data/lfp/reference/benchmark_export
+      hpc: /path/to/benchmark/data/lfp/reference/benchmark_export
 
   fp:
     identity: fp
     modality_evidence: continuous processed fiber-photometry signal
     bundle:
-      local: data/AgNeuro_bundle/Cohorts/fp/infod2pctw/latent_state/bundles/fp
-      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/fp/infod2pctw/latent_state/bundles/fp
+      local: data/fp/bundle
+      hpc: /path/to/benchmark/data/fp/bundle
     infod2pctw_result:
-      local: "temp/infod2pctwc_projects copy/projects/2026_09_12-18_23_13"
-      hpc: /scratch/fpour100/DPCCA_variants/data/projects/2026_09_12-18_23_13
+      local: data/fp/reference
+      hpc: /path/to/benchmark/data/fp/reference
     infod2pctw_evaluation:
-      local: "temp/infod2pctwc_projects copy/projects/2026_09_12-18_23_13/benchmark_export"
-      hpc: /scratch/fpour100/DPCCA_variants/data/projects/2026_09_12-18_23_13/benchmark_export
+      local: data/fp/reference/benchmark_export
+      hpc: /path/to/benchmark/data/fp/reference/benchmark_export
 
   miniscope:
-    identity: dms/2JH3_NoPart
+    identity: miniscope
     modality_evidence: processed calcium observations on a miniscope acquisition clock
     bundle:
-      local: data/AgNeuro_bundle/Cohorts/dms/infod2pctw/latent_state/bundles/dms/2JH3_NoPart
-      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/dms/infod2pctw/latent_state/bundles/dms/2JH3_NoPart
+      local: data/miniscope/bundle
+      hpc: /path/to/benchmark/data/miniscope/bundle
     infod2pctw_result:
-      local: "temp/infod2pctwc_projects copy/projects/2026_09_13-04_20_32"
-      hpc: /scratch/fpour100/DPCCA_variants/data/projects/2026_09_13-04_20_32
+      local: data/miniscope/reference
+      hpc: /path/to/benchmark/data/miniscope/reference
     infod2pctw_evaluation:
-      local: "temp/infod2pctwc_projects copy/projects/2026_09_13-04_20_32/benchmark_export"
-      hpc: /scratch/fpour100/DPCCA_variants/data/projects/2026_09_13-04_20_32/benchmark_export
+      local: data/miniscope/reference/benchmark_export
+      hpc: /path/to/benchmark/data/miniscope/reference/benchmark_export
 
 models:
   d2pcca:
@@ -73,7 +73,7 @@ models:
   infod2pctw:
     kind: reference
     config: infod2pctw/configs/infod2pctw_config.yaml
-    recorded_git_commit: ec04b4191ee517d9e105f0a7a10dc7f1465786fa
+    recorded_git_commit: null # Supply the commit for your reference export.
     retrain: false
 
 

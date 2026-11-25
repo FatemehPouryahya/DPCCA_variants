@@ -1,52 +1,45 @@
-# Info-D²PCTW manuscript baselines
+# Benchmark run guide
 
-This repository runs D²PCCA, InfoDPCCA, and DPCTW against one strict AgNeuro
-input/result contract. It does not import the proposed Info-D²PCTW model and it
-does not implement plain DPCCA as a separate benchmark.
+See the [project overview](../README.md) for the research question, contribution and attribution notes, and the synthetic CPU example.
 
-## Environment
+## Full environment and upstream models
 
-```bash
-python -m venv .venv
-.venv/bin/pip install -r requirements.txt
-```
-
-The checked smoke environment uses Python 3.12.2, PyTorch 2.6.0,
-Pyro 1.9.1, NumPy 2.1.3, and SciPy 1.15.2. The author D²PCCA repository pins
-PyTorch 2.0.1/Pyro 1.8.4; Pyro 1.9.1 is used here because it supports the
-available Python/PyTorch runtime without changing the model API or objective.
-
-## Run
+In a fresh checkout, run this from the repository root:
 
 ```bash
-.venv/bin/python run_baseline.py \
-  --model d2pcca \
-  --data real_data_debug/2JH3_NoPart_debug_1000 \
-  --config configs/d2pcca.yaml
+git submodule update --init
+cd infod2pctw_benchmarks
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
-Replace the model/config with `infodpcca` or `dpctw`. The checked configs are
-deliberately short smoke schedules; increase iteration counts before a
-manuscript run.
+The existing requirements include the model dependencies, test tools and Snakemake/Slurm tooling. The benchmark uses Pyro 1.9.1. D²PCCA upstream specifies PyTorch 2.0.1 and Pyro 1.8.4 for its own environment. DPCTW runs without the submodules.
+
+## Run the CLI with your own data
+
+From this directory, point `--data` to a compatible directory containing `arrays.npz` and, for predefined trial splits, `metadata.json`. Use a new output directory for a new run.
 
 ```bash
-.venv/bin/python evaluate.py \
-  --data real_data_debug/2JH3_NoPart_debug_1000 \
-  --results results/dms_2JH3_NoPart/d2pcca \
-            results/dms_2JH3_NoPart/infodpcca \
-            results/dms_2JH3_NoPart/dpctw \
-  --summary results/dms_2JH3_NoPart/comparison.csv
+python run_baseline.py --model dpctw \
+  --data /path/to/compatible/bundle \
+  --config configs/dpctw.yaml --output results/local/dpctw
+
+python evaluate.py --data /path/to/compatible/bundle \
+  --results results/local/dpctw --summary results/local/comparison.csv
 ```
 
-The evaluator also accepts an exported Info-D²PCTW result directory when its
-reconstruction keys use `x_reconstruction`/`recon_x`/`x_hat` and
-`y_reconstruction`/`recon_y`/`y_hat`.
+For another baseline, use `d2pcca` or `infodpcca` with its corresponding config. For split-based runs, the evaluator reuses the saved split and normalization, reloads the selected checkpoint, and writes `test_metrics.json`. It can also read compatible exported reconstructions using the legacy artifact path. Use the synthetic test in the root README to try the full pipeline without supplying recordings.
+
+The root YAML files are workflow templates and require compatible bundles and, for reference comparison, matching Info-D²PCTW exports. The Snakefile defaults to the synthetic template. Set the local or HPC paths, reference revision where applicable, and site settings before using it. For the Slurm launchers, set `BENCHMARK_VENV` to your configured environment and pass your allocation with `sbatch --account=YOUR_SLURM_ACCOUNT`.
 
 ## Tests
 
 ```bash
-PYTHONPATH=. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q -p no:cacheprovider
-```
+# Tests that do not need the upstream submodules
+python -m pytest -q tests/test_data.py tests/test_result_evaluation.py \
+  tests/test_dpctw.py tests/test_dpctw_workflow.py
 
-See `BASELINE_AUDIT.md` for source selection, exact adaptations, equations, and
-known limitations.
+# Full suite with the pinned upstream models initialized
+python -m pytest -q
+```

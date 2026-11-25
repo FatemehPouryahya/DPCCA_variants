@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --account=def-rozeske
+# Submit with sbatch --account=YOUR_SLURM_ACCOUNT
 #SBATCH --gpus=h100:1
 #SBATCH --mem=128G
 #SBATCH --cpus-per-task=4
@@ -22,9 +22,7 @@ PROJECT_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
 module load python/3.11
 
 
-# source ~/envs/snakemake_cc/bin/activate
-# source ~/envs/dpcca_baselines/bin/activate
-source $SCRATCH/dpcca_baselines/bin/activate
+source "${BENCHMARK_VENV:?Set BENCHMARK_VENV to the benchmark virtual environment}/bin/activate"
 
 export PYTHONNOUSERSITE=1
 cd "$PROJECT_DIR"

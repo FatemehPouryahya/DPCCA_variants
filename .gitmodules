@@ -1,0 +1,6 @@
+[submodule "infod2pctw_benchmarks/third_party/D2PCCA"]
+	path = infod2pctw_benchmarks/third_party/D2PCCA
+	url = https://github.com/marcusstang/D2PCCA.git
+[submodule "infod2pctw_benchmarks/third_party/InfoDPCCA"]
+	path = infod2pctw_benchmarks/third_party/InfoDPCCA
+	url = https://github.com/marcusstang/InfoDPCCA.git

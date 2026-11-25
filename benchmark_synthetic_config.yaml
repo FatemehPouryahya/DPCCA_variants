@@ -1,7 +1,7 @@
 schema_version: infod2pctw-manuscript-benchmark-v1
 
 training_configs_approved: true #false
-execution_environment: hpc #local  # override with hpc on the cluster
+execution_environment: hpc # Set to local for a configured local workflow.
 
 # Edit only this block to choose the workflow scope.
 run:
@@ -17,7 +17,7 @@ paths:
   hpc_python: python
 
 hpc:
-  slurm_account: def-rozeske
+  slurm_account: YOUR_SLURM_ACCOUNT
   gpu_model: h100
 
 datasets:
@@ -25,43 +25,43 @@ datasets:
     identity: noise_std-2-25_linear
     modality_evidence: synthetic data with low noise ~20 dB with identity alignment (no time warping) with linear observation model 
     bundle:
-      local: data/AgNeuro_bundle/Cohorts/noise_std-2-25/infod2pctw/shared_private_linear/bundles/synthetic
-      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/noise_std-2-25/infod2pctw/shared_private_linear/bundles/synthetic
+      local: data/synth_lin_low/bundle
+      hpc: /path/to/benchmark/data/synth_lin_low/bundle
 
   synth_nonlin_low:
     identity: noise_std-2-25_nonlinear
     modality_evidence: synthetic data with low noise ~20 dB with identity alignment (no time warping) with nonlinear observation model 
     bundle:
-      local: data/AgNeuro_bundle/Cohorts/noise_std-2-25/infod2pctw/shared_private_nonlinear/bundles/synthetic
-      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/noise_std-2-25/infod2pctw/shared_private_nonlinear/bundles/synthetic
+      local: data/synth_nonlin_low/bundle
+      hpc: /path/to/benchmark/data/synth_nonlin_low/bundle
 
   synth_lin_low_tw:
     identity: noise_std-2-25_linear_tw
     modality_evidence: synthetic data with low noise ~20 dB with time warping alignment with linear observation model 
     bundle:
-      local: data/AgNeuro_bundle/Cohorts/noise_std-2-25_tw/infod2pctw/shared_private_linear/bundles/synthetic
-      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/noise_std-2-25_tw/infod2pctw/shared_private_linear/bundles/synthetic
+      local: data/synth_lin_low_tw/bundle
+      hpc: /path/to/benchmark/data/synth_lin_low_tw/bundle
 
   synth_nonlin_low_tw:
     identity: noise_std-2-25_nonlinear_tw
     modality_evidence: synthetic data with low noise ~20 dB with time warping alignment with nonlinear observation model 
     bundle:
-      local: data/AgNeuro_bundle/Cohorts/noise_std-2-25_tw/infod2pctw/shared_private_nonlinear/bundles/synthetic
-      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/noise_std-2-25_tw/infod2pctw/shared_private_nonlinear/bundles/synthetic      
+      local: data/synth_nonlin_low_tw/bundle
+      hpc: /path/to/benchmark/data/synth_nonlin_low_tw/bundle
   
   synth_lin_high:
     identity: noise_std-0-05_linear
     modality_evidence: synthetic data with high noise ~50 dB with identity alignment (no time warping) with linear observation model 
     bundle:
-      local: data/AgNeuro_bundle/Cohorts/noise_std-0-05/infod2pctw/shared_private_linear/bundles/synthetic
-      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/noise_std-0-05/infod2pctw/shared_private_linear/bundles/synthetic
+      local: data/synth_lin_high/bundle
+      hpc: /path/to/benchmark/data/synth_lin_high/bundle
   
   synth_nonlin_high:
     identity: noise_std-0-05_nonlinear
     modality_evidence: synthetic data with high noise ~50 dB with identity alignment (no time warping) with nonlinear observation model 
     bundle:
-      local: data/AgNeuro_bundle/Cohorts/noise_std-0-05/infod2pctw/shared_private_nonlinear/bundles/synthetic
-      hpc: /scratch/fpour100/DPCCA_variants/data/AgNeuro_bundle/Cohorts/noise_std-0-05/infod2pctw/shared_private_nonlinear/bundles/synthetic
+      local: data/synth_nonlin_high/bundle
+      hpc: /path/to/benchmark/data/synth_nonlin_high/bundle
 
 models:
   d2pcca:
@@ -76,7 +76,7 @@ models:
   infod2pctw:
     kind: reference
     config: infod2pctw/configs/infod2pctw_config.yaml
-    recorded_git_commit: ec04b4191ee517d9e105f0a7a10dc7f1465786fa
+    recorded_git_commit: null # Supply the commit for your reference export.
     retrain: false
 
 
